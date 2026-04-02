@@ -5,9 +5,11 @@
  */
 
 import type { CountryOption, FruitOption, GelatoBase, StrategyPreset, FactorMap } from "../data/marketFit";
+import type { PricingProfile } from "../data/pricing";
+import type { RegionalFlavorEntry, FruitCostEntry } from "../data/regionalData";
 
 const STORAGE_KEY = "bonchi-market-fit";
-const VERSION = 1;
+const VERSION = 2;
 
 export interface PersistedState {
   version: number;
@@ -20,6 +22,11 @@ export interface PersistedState {
   presetId: string;
   pricePoint: number;
   weights: FactorMap;
+  // Editable data (optional for backward compat)
+  pricingByCountry?: Record<string, PricingProfile>;
+  regionalFlavorBonus?: Record<string, Record<string, RegionalFlavorEntry>>;
+  fruitCostByCountry?: Record<string, Record<string, FruitCostEntry>>;
+  baseProductionCost?: Record<string, number>;
 }
 
 export function saveState(state: Omit<PersistedState, "version">): void {
@@ -37,9 +44,9 @@ export function loadState(): Omit<PersistedState, "version"> | null {
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as PersistedState;
-    if (parsed.version !== VERSION) return null;
+    // Accept version 1 or 2 — v1 just won't have the new data fields
+    if (parsed.version !== VERSION && parsed.version !== 1) return null;
 
-    // Basic shape validation
     if (
       !Array.isArray(parsed.countries) ||
       !Array.isArray(parsed.fruits) ||
@@ -64,6 +71,10 @@ export function loadState(): Omit<PersistedState, "version"> | null {
       presetId: parsed.presetId,
       pricePoint: parsed.pricePoint,
       weights: parsed.weights,
+      pricingByCountry: parsed.pricingByCountry,
+      regionalFlavorBonus: parsed.regionalFlavorBonus,
+      fruitCostByCountry: parsed.fruitCostByCountry,
+      baseProductionCost: parsed.baseProductionCost,
     };
   } catch {
     return null;

@@ -10,15 +10,30 @@ import {
   type GelatoBase,
   type StrategyPreset,
 } from "../data/marketFit";
-import { baseProductionCost, calculatePriceFit, pricingByCountry } from "../data/pricing";
 import {
-  fruitCostByCountry,
+  baseProductionCost as defaultBaseProductionCost,
+  calculatePriceFit,
+  pricingByCountry as defaultPricingByCountry,
+  type PricingProfile,
+} from "../data/pricing";
+import {
+  fruitCostByCountry as defaultFruitCostByCountry,
   getCostDollarSign,
   getCostEfficiencyScore,
   getSupplyLabel,
-  regionalFlavorBonus,
+  regionalFlavorBonus as defaultRegionalFlavorBonus,
+  type FruitCostEntry,
+  type RegionalFlavorEntry,
 } from "../data/regionalData";
 import { defaultScoringConfig, type ScoringConfig } from "../data/scoringConfig";
+
+/** Optional overrides for all external data — when provided, replaces static imports */
+export type DataOverrides = {
+  pricingByCountry?: Record<string, PricingProfile>;
+  regionalFlavorBonus?: Record<string, Record<string, RegionalFlavorEntry>>;
+  fruitCostByCountry?: Record<string, Record<string, FruitCostEntry>>;
+  baseProductionCost?: Record<string, number>;
+};
 
 export type FactorDetail = {
   factor: Factor;
@@ -93,11 +108,11 @@ function generateDataDrivenInsights(
   pricePoint: number | undefined,
   regionalBonus: number,
   factorDetails: FactorDetail[],
+  pricing: PricingProfile | undefined,
   maxInsights = 4,
 ): string[] {
   const insights: string[] = [];
 
-  // Regional flavor insight
   if (flavorData && flavorData.bonus > 0) {
     if (flavorData.familiarity === "high") {
       insights.push(
@@ -114,7 +129,6 @@ function generateDataDrivenInsights(
     }
   }
 
-  // Cost & supply insight
   if (costData) {
     const costLabel = getCostDollarSign(costData.costIndex);
     const supplyLabel = getSupplyLabel(costData.supplyReliability);
@@ -123,18 +137,13 @@ function generateDataDrivenInsights(
     );
   }
 
-  // Price insight
-  if (priceFit !== null && pricePoint !== undefined && pricePoint > 0 && estimatedMargin !== null) {
-    const pricing = pricingByCountry[country.id];
-    if (pricing) {
-      const ratio = ((pricePoint / pricing.avgMarketPrice) * 100).toFixed(0);
-      insights.push(
-        `At $${pricePoint.toFixed(2)}, price is ${ratio}% of ${country.label}'s market average — est. margin $${estimatedMargin.toFixed(2)}/unit.`,
-      );
-    }
+  if (priceFit !== null && pricePoint !== undefined && pricePoint > 0 && estimatedMargin !== null && pricing) {
+    const ratio = ((pricePoint / pricing.avgMarketPrice) * 100).toFixed(0);
+    insights.push(
+      `At $${pricePoint.toFixed(2)}, price is ${ratio}% of ${country.label}'s market average — est. margin $${estimatedMargin.toFixed(2)}/unit.`,
+    );
   }
 
-  // Top factor insight
   const topFactor = [...factorDetails].sort((a, b) => b.weightedMatch - a.weightedMatch)[0];
   if (topFactor) {
     const factorName = factorLabels[topFactor.factor].toLowerCase();
@@ -145,7 +154,6 @@ function generateDataDrivenInsights(
     }
   }
 
-  // Health insight for sorbet/vegan
   if ((base.id === "sorbet" || base.id === "vegan-gelato") && country.profile.health >= 4) {
     insights.push(
       `${base.label} avoids dairy, fitting health-conscious demand in ${country.label}.`,
@@ -162,6 +170,7 @@ export const rankFruitConcepts = ({
   weights,
   pricePoint,
   config = defaultScoringConfig,
+  data,
 }: {
   country: CountryOption;
   base: GelatoBase;
@@ -169,13 +178,19 @@ export const rankFruitConcepts = ({
   weights: StrategyPreset["weights"];
   pricePoint?: number;
   config?: ScoringConfig;
+  data?: DataOverrides;
 }): RankedConcept[] => {
+  const pricingMap = data?.pricingByCountry ?? defaultPricingByCountry;
+  const flavorMap = data?.regionalFlavorBonus ?? defaultRegionalFlavorBonus;
+  const costMap = data?.fruitCostByCountry ?? defaultFruitCostByCountry;
+  const prodCostMap = data?.baseProductionCost ?? defaultBaseProductionCost;
+
   const maxPossibleScore = factors.reduce(
     (total, factor) => total + 5 * weights[factor],
     0,
   );
 
-  const pricing = pricingByCountry[country.id];
+  const pricing = pricingMap[country.id];
 
   return fruits
     .map((fruit) => {
@@ -203,16 +218,14 @@ export const rankFruitConcepts = ({
 
       const baseScore = roundToTenth((weightedScore / maxPossibleScore) * 100);
 
-      // Regional flavor bonus
-      const flavorData = regionalFlavorBonus[country.id]?.[fruit.id];
+      const flavorData = flavorMap[country.id]?.[fruit.id];
       const regionalBonusRaw = flavorData ? flavorData.bonus : 0;
       const regionalBonus = roundToTenth(regionalBonusRaw * config.regionalBonus.maxPoints);
       const regionalFlavorInfo = flavorData
         ? { bonus: flavorData.bonus, reason: flavorData.reason, familiarity: flavorData.familiarity }
         : null;
 
-      // Cost efficiency
-      const costData = fruitCostByCountry[fruit.id]?.[country.id];
+      const costData = costMap[fruit.id]?.[country.id];
       const costEfficiency = costData
         ? {
             score: getCostEfficiencyScore(costData.costIndex, costData.supplyReliability),
@@ -222,12 +235,10 @@ export const rankFruitConcepts = ({
           }
         : null;
 
-      // Cost efficiency bonus
       const costBonus = costEfficiency
         ? roundToTenth(((costEfficiency.score - config.costBonus.neutralScore) / config.costBonus.neutralScore) * config.costBonus.maxPoints)
         : 0;
 
-      // Price fit
       let priceFitValue: number | null = null;
       let priceBonus = 0;
       let estimatedMargin: number | null = null;
@@ -237,8 +248,9 @@ export const rankFruitConcepts = ({
         );
         priceBonus = roundToTenth((priceFitValue - config.priceBonus.neutralFit) * config.priceBonus.multiplier);
         const fruitCostIndex = costData?.costIndex ?? 2.5;
+        const baseCost = prodCostMap[base.id] ?? 2.5;
         estimatedMargin = roundToTenth(
-          pricePoint - (baseProductionCostValue(base.id) * fruitCostIndex * config.margin.costFraction * pricing.costMultiplier),
+          pricePoint - (baseCost * fruitCostIndex * config.margin.costFraction * pricing.costMultiplier),
         );
       }
 
@@ -248,60 +260,36 @@ export const rankFruitConcepts = ({
       );
 
       const insights = generateDataDrivenInsights(
-        country,
-        base,
-        fruit,
+        country, base, fruit,
         flavorData ? { bonus: flavorData.bonus, reason: flavorData.reason, familiarity: flavorData.familiarity } : null,
         costData ?? null,
-        priceFitValue,
-        estimatedMargin,
-        pricePoint,
-        regionalBonus,
-        factorDetails,
+        priceFitValue, estimatedMargin, pricePoint,
+        regionalBonus, factorDetails, pricing,
         config.maxInsights,
       );
 
       return {
-        fruit,
-        base,
+        fruit, base,
         conceptLabel: `${fruit.label} ${base.label}`,
-        score: adjustedScore,
-        baseScore,
-        conceptProfile,
-        factorDetails,
-        explanation: insights,
-        insights,
-        regionalBonus,
-        regionalFlavorInfo,
-        costEfficiency,
-        priceFit: priceFitValue,
-        estimatedMargin,
+        score: adjustedScore, baseScore, conceptProfile, factorDetails,
+        explanation: insights, insights,
+        regionalBonus, regionalFlavorInfo, costEfficiency,
+        priceFit: priceFitValue, estimatedMargin,
       };
     })
     .sort((left, right) => right.score - left.score);
 };
 
-function baseProductionCostValue(baseId: string): number {
-  return baseProductionCost[baseId] ?? 2.5;
-}
-
 export const scoreSingleCombination = ({
-  country,
-  base,
-  fruit,
-  weights,
+  country, base, fruit, weights, data,
 }: {
   country: CountryOption;
   base: GelatoBase;
   fruit: FruitOption;
   weights: StrategyPreset["weights"];
+  data?: DataOverrides;
 }): number => {
-  const results = rankFruitConcepts({
-    country,
-    base,
-    fruits: [fruit],
-    weights,
-  });
+  const results = rankFruitConcepts({ country, base, fruits: [fruit], weights, data });
   return results[0]?.score ?? 0;
 };
 
@@ -318,15 +306,13 @@ export type BenchmarkEntry = {
 };
 
 export const generateBenchmarkMatrix = ({
-  countries,
-  bases,
-  fruits,
-  weights,
+  countries, bases, fruits, weights, data,
 }: {
   countries: CountryOption[];
   bases: GelatoBase[];
   fruits: FruitOption[];
   weights: StrategyPreset["weights"];
+  data?: DataOverrides;
 }): BenchmarkEntry[] => {
   const entries: BenchmarkEntry[] = [];
 
@@ -334,7 +320,7 @@ export const generateBenchmarkMatrix = ({
     for (const fruit of fruits) {
       const scores: Record<string, number> = {};
       for (const country of countries) {
-        scores[country.id] = scoreSingleCombination({ country, base, fruit, weights });
+        scores[country.id] = scoreSingleCombination({ country, base, fruit, weights, data });
       }
 
       const scoreValues = Object.values(scores);
@@ -345,15 +331,9 @@ export const generateBenchmarkMatrix = ({
       const bestCountry = countries.find((c) => c.id === bestCountryId)?.label ?? bestCountryId;
 
       entries.push({
-        fruitId: fruit.id,
-        fruitLabel: fruit.label,
-        baseId: base.id,
-        baseLabel: base.label,
-        scores,
-        min,
-        max,
-        avg,
-        bestCountry,
+        fruitId: fruit.id, fruitLabel: fruit.label,
+        baseId: base.id, baseLabel: base.label,
+        scores, min, max, avg, bestCountry,
       });
     }
   }
@@ -375,12 +355,7 @@ export const getDominantFactors = (weights: FactorMap): Factor[] =>
   factors.slice().sort((left, right) => weights[right] - weights[left]).slice(0, 2);
 
 export const fruitFactors: FruitFactor[] = [
-  "fruit",
-  "refreshing",
-  "health",
-  "premium",
-  "culturalFit",
-  "exoticAppetite",
+  "fruit", "refreshing", "health", "premium", "culturalFit", "exoticAppetite",
 ];
 
 export const getFactorLabel = (factor: Factor) => factorLabels[factor];

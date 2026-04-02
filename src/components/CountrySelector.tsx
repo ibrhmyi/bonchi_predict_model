@@ -1,11 +1,12 @@
 import type { CountryOption } from "../data/marketFit";
-import { pricingByCountry } from "../data/pricing";
+import { pricingByCountry as defaultPricing, type PricingProfile } from "../data/pricing";
 import { demographicsByCountry } from "../data/demographics";
 
 type CountrySelectorProps = {
   countries: CountryOption[];
   selectedId: string;
   onChange: (id: string) => void;
+  pricingByCountry?: Record<string, PricingProfile>;
 };
 
 const countryMeta: Record<string, { flag: string; climate: string }> = {
@@ -15,7 +16,7 @@ const countryMeta: Record<string, { flag: string; climate: string }> = {
   poland: { flag: "\u{1F1F5}\u{1F1F1}", climate: "Growing market, price-conscious" },
 };
 
-export function CountrySelector({ countries, selectedId, onChange }: CountrySelectorProps) {
+export function CountrySelector({ countries, selectedId, onChange, pricingByCountry = defaultPricing }: CountrySelectorProps) {
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {countries.map((country) => {
