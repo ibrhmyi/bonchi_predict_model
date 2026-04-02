@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CountrySelector } from "./components/CountrySelector";
 import { DataHealthPanel } from "./components/DataHealthPanel";
+import { MethodologyPanel } from "./components/MethodologyPanel";
 import { ModelLibrary } from "./components/ModelLibrary";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { ScenarioPanel } from "./components/ScenarioPanel";
@@ -26,7 +27,7 @@ import { loadState, saveState } from "./utils/persistence";
 import type { Scenario } from "./utils/scenarios";
 import { getPresetWeights, rankFruitConcepts } from "./utils/scoring";
 
-type ActiveTab = "decision-tool" | "model-library";
+type ActiveTab = "decision-tool" | "model-library" | "methodology";
 
 const clampInput = (value: number) => Math.min(5, Math.max(1, value));
 
@@ -159,6 +160,13 @@ export default function App() {
               className={tabButtonClass("model-library")}
             >
               Model Library
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("methodology")}
+              className={tabButtonClass("methodology")}
+            >
+              Methodology
             </button>
           </div>
         </header>
@@ -432,6 +440,8 @@ export default function App() {
           <DataHealthPanel countries={countries} fruits={fruits} bases={bases} />
           </div>
         ) : null}
+
+        {activeTab === "methodology" ? <MethodologyPanel /> : null}
       </div>
     </main>
   );

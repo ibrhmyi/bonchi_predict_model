@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { factorLabels, type CountryOption, type GelatoBase, type StrategyPreset } from "../data/marketFit";
+import { confidenceLabels, dataConfidence } from "../data/methodology";
 import { getCostDollarSign, getFlavorFamiliarityLabel, getMatchQualityLabel, getSupplyLabel } from "../data/regionalData";
 import { getPriceImpact } from "../data/pricing";
 import type { RankedConcept } from "../utils/scoring";
@@ -92,6 +93,9 @@ export function ResultsPanel({
 
   if (!topPick) return null;
 
+  const countryConf = dataConfidence[`country:${country.id}`];
+  const costConf = dataConfidence["cost:general"];
+
   // Top 3 factors sorted by weighted match
   const sortedFactors = [...topPick.factorDetails].sort(
     (a, b) => b.weightedMatch - a.weightedMatch,
@@ -112,9 +116,19 @@ export function ResultsPanel({
         <div className="bg-gradient-to-br from-[#fbf8f3] via-white to-[#f2eadf] p-6 xl:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone">
-                Best concept for {country.label}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone">
+                  Best concept for {country.label}
+                </p>
+                {countryConf && (
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold ${confidenceLabels[countryConf.confidence].color}`}
+                    title={countryConf.source}
+                  >
+                    {confidenceLabels[countryConf.confidence].label} data
+                  </span>
+                )}
+              </div>
               <h2 className="mt-2 font-serif text-4xl text-ink xl:text-5xl">
                 {topPick.conceptLabel}
               </h2>
@@ -161,8 +175,15 @@ export function ResultsPanel({
               </div>
               {topPick.estimatedMargin !== null && (
                 <div className="rounded-3xl bg-[#2D6A4F] px-5 py-4 text-white shadow-lg shadow-[#2D6A4F]/20">
-                  <div className="text-[10px] uppercase tracking-[0.28em] text-white/50">
-                    Est. Margin
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                      Est. Margin
+                    </span>
+                    {costConf && costConf.confidence === "placeholder" && (
+                      <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[8px] font-medium text-white/70" title={costConf.source}>
+                        est.
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-4xl font-bold tabular-nums">
                     ${topPick.estimatedMargin.toFixed(2)}
