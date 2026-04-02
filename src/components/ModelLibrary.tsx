@@ -29,6 +29,8 @@ type ModelLibraryProps = {
   data?: DataOverrides;
   onAddCountry: () => void;
   onAddFruit: () => void;
+  onAddBase: () => void;
+  onAddPreset: () => void;
   onCountryLabelChange: (id: string, label: string) => void;
   onCountryFactorChange: (id: string, factor: Factor, value: number) => void;
   onFruitLabelChange: (id: string, label: string) => void;
@@ -111,7 +113,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
   const {
     countries, fruits, bases, presets, weights, data,
     pricingByCountry, flavorData, fruitCostData, productionCostData,
-    onAddCountry, onAddFruit,
+    onAddCountry, onAddFruit, onAddBase, onAddPreset,
     onCountryLabelChange, onCountryFactorChange,
     onFruitLabelChange, onFruitFactorChange,
     onBaseLabelChange, onBaseFactorChange,
@@ -177,7 +179,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
       </Section>
 
       {/* Product Formats */}
-      <Section title="Product Formats" subtitle="Base profiles and production costs" defaultOpen={false}>
+      <Section title="Product Formats" subtitle="Base profiles and production costs" defaultOpen={false}
+        action={<button type="button" onClick={(e) => { e.stopPropagation(); onAddBase(); }}
+          className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white">Add Base</button>}>
         <table className="min-w-full border-separate border-spacing-y-1.5">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
@@ -322,7 +326,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
       </Section>
 
       {/* Strategy Presets */}
-      <Section title="Scoring Weights" subtitle="Preset strategies that determine which factors dominate ranking" defaultOpen={false}>
+      <Section title="Scoring Weights" subtitle="Preset strategies that determine which factors dominate ranking" defaultOpen={false}
+        action={<button type="button" onClick={(e) => { e.stopPropagation(); onAddPreset(); }}
+          className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white">Add Strategy</button>}>
         <table className="min-w-full border-separate border-spacing-y-1.5">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">

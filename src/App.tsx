@@ -262,8 +262,43 @@ export default function App() {
               pricingByCountry={pricingData} flavorData={flavorData}
               fruitCostData={fruitCostData} productionCostData={productionCostData}
               data={dataOverrides}
-              onAddCountry={() => setCountries((c) => [...c, { id: `country-${c.length + 1}`, label: `New Country ${c.length + 1}`, profile: emptyCountryProfile() }])}
-              onAddFruit={() => setFruits((f) => [...f, { id: `fruit-${f.length + 1}`, label: `New Fruit ${f.length + 1}`, profile: emptyFruitProfile() }])}
+              onAddCountry={() => {
+                const id = `country-${Date.now()}`;
+                const label = `New Country ${countries.length + 1}`;
+                setCountries((c) => [...c, { id, label, profile: emptyCountryProfile() }]);
+                setPricingData((prev) => ({ ...prev, [id]: { avgMarketPrice: 4, priceSensitivity: 3, currency: "USD", costMultiplier: 1 } }));
+                setFlavorData((prev) => {
+                  const updated = { ...prev, [id]: {} as Record<string, typeof prev[string][string]> };
+                  for (const fr of fruits) updated[id][fr.id] = { bonus: 0, familiarity: "low" as const, reason: "" };
+                  return updated;
+                });
+                setFruitCostData((prev) => {
+                  const updated = { ...prev };
+                  for (const fr of fruits) updated[fr.id] = { ...updated[fr.id], [id]: { costIndex: 2.5, supplyReliability: 3, sourceNote: "" } };
+                  return updated;
+                });
+              }}
+              onAddFruit={() => {
+                const id = `fruit-${Date.now()}`;
+                const label = `New Fruit ${fruits.length + 1}`;
+                setFruits((f) => [...f, { id, label, profile: emptyFruitProfile() }]);
+                setFlavorData((prev) => {
+                  const updated = { ...prev };
+                  for (const c of countries) updated[c.id] = { ...updated[c.id], [id]: { bonus: 0, familiarity: "low" as const, reason: "" } };
+                  return updated;
+                });
+                setFruitCostData((prev) => ({ ...prev, [id]: Object.fromEntries(countries.map((c) => [c.id, { costIndex: 2.5, supplyReliability: 3, sourceNote: "" }])) }));
+              }}
+              onAddBase={() => {
+                const id = `base-${Date.now()}`;
+                const label = `New Base ${bases.length + 1}`;
+                setBases((b) => [...b, { id, label, profile: emptyCountryProfile() }]);
+                setProductionCostData((prev) => ({ ...prev, [id]: 2.5 }));
+              }}
+              onAddPreset={() => {
+                const id = `preset-${Date.now()}`;
+                setPresets((p) => [...p, { id, label: `New Strategy ${presets.length + 1}`, weights: emptyCountryProfile(), summary: "" }]);
+              }}
               onCountryLabelChange={(id, label) => setCountries((c) => c.map((x) => x.id === id ? { ...x, label } : x))}
               onCountryFactorChange={(id, factor, value) => setCountries((c) => c.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}
               onFruitLabelChange={(id, label) => setFruits((f) => f.map((x) => x.id === id ? { ...x, label } : x))}
