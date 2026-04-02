@@ -31,6 +31,7 @@ export default function App() {
   const [baseId, setBaseId] = useState<string>(defaultSelection.baseId);
   const [presetId, setPresetId] = useState<string>(defaultSelection.presetId);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [pricePoint, setPricePoint] = useState(5);
 
   const selectedPreset = presets.find((preset) => preset.id === presetId) ?? presets[0];
   const [weights, setWeights] = useState(getPresetWeights(selectedPreset));
@@ -68,6 +69,7 @@ export default function App() {
           base: selectedBase,
           fruits,
           weights,
+          pricePoint,
         })
       : [];
 
@@ -113,7 +115,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="mt-6 grid gap-3 sm:grid-cols-4">
             <div className="rounded-3xl border border-sand bg-bone/80 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.24em] text-stone">Country</div>
               <div className="mt-2 text-lg font-medium text-ink">
@@ -121,7 +123,7 @@ export default function App() {
               </div>
             </div>
             <div className="rounded-3xl border border-sand bg-bone/80 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.24em] text-stone">Gelato Base</div>
+              <div className="text-xs uppercase tracking-[0.24em] text-stone">Product Base</div>
               <div className="mt-2 text-lg font-medium text-ink">
                 {selectedBase?.label ?? "N/A"}
               </div>
@@ -129,6 +131,10 @@ export default function App() {
             <div className="rounded-3xl border border-sand bg-bone/80 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.24em] text-stone">Preset</div>
               <div className="mt-2 text-lg font-medium text-ink">{safePreset?.label ?? "N/A"}</div>
+            </div>
+            <div className="rounded-3xl border border-sand bg-bone/80 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.24em] text-stone">Price Point</div>
+              <div className="mt-2 text-lg font-medium text-ink">${pricePoint.toFixed(2)}</div>
             </div>
           </div>
         </header>
@@ -144,6 +150,8 @@ export default function App() {
               selectedPresetId={presetId}
               advancedOpen={advancedOpen}
               weights={weights}
+              pricePoint={pricePoint}
+              countryId={countryId}
               onCountryChange={setCountryId}
               onBaseChange={setBaseId}
               onPresetChange={setPresetId}
@@ -151,6 +159,7 @@ export default function App() {
               onWeightChange={(factor, value) =>
                 setWeights((current) => ({ ...current, [factor]: clampInput(value) }))
               }
+              onPriceChange={setPricePoint}
             />
 
             <ResultsPanel
@@ -159,6 +168,8 @@ export default function App() {
               preset={safePreset}
               weights={weights}
               ranking={ranking}
+              pricePoint={pricePoint}
+              onPriceChange={setPricePoint}
             />
           </div>
         ) : null}
@@ -169,6 +180,7 @@ export default function App() {
             fruits={fruits}
             bases={bases}
             presets={presets}
+            weights={weights}
             onAddCountry={() =>
               setCountries((current) => [
                 ...current,

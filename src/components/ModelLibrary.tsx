@@ -5,18 +5,21 @@ import {
   factors,
   type CountryOption,
   type Factor,
+  type FactorMap,
   type FruitFactor,
   type FruitOption,
   type GelatoBase,
   type StrategyPreset,
 } from "../data/marketFit";
 import { fruitFactors } from "../utils/scoring";
+import { BenchmarkMatrix } from "./BenchmarkMatrix";
 
 type ModelLibraryProps = {
   countries: CountryOption[];
   fruits: FruitOption[];
   bases: GelatoBase[];
   presets: StrategyPreset[];
+  weights: FactorMap;
   onAddCountry: () => void;
   onAddFruit: () => void;
   onCountryLabelChange: (id: string, label: string) => void;
@@ -85,6 +88,7 @@ export function ModelLibrary({
   fruits,
   bases,
   presets,
+  weights,
   onAddCountry,
   onAddFruit,
   onCountryLabelChange,
@@ -99,6 +103,14 @@ export function ModelLibrary({
 }: ModelLibraryProps) {
   return (
     <div className="space-y-6">
+      {/* Benchmark Matrix */}
+      <BenchmarkMatrix
+        countries={countries}
+        bases={bases}
+        fruits={fruits}
+        weights={weights}
+      />
+
       <TableShell
         title="Countries"
         subtitle="Market demand profiles on a 1 to 5 scale. Edit directly to pressure-test the recommendation engine."
@@ -149,7 +161,7 @@ export function ModelLibrary({
 
       <TableShell
         title="Fruits"
-        subtitle="Fruit-level assumptions that blend into the selected gelato base to produce the final concept profile."
+        subtitle="Fruit-level assumptions that blend into the selected product base to produce the final concept profile."
         action={
           <button
             type="button"
@@ -196,7 +208,7 @@ export function ModelLibrary({
       </TableShell>
 
       <TableShell
-        title="Gelato Bases"
+        title="Product Bases"
         subtitle="Base profiles shape texture, premium level, and the non-fruit characteristics of the final concept."
       >
         <table className="min-w-full border-separate border-spacing-y-2">

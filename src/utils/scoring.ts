@@ -10,6 +10,12 @@ import {
   type GelatoBase,
   type StrategyPreset,
 } from "../data/marketFit";
+import { calculatePriceFit, pricingByCountry } from "../data/pricing";
+import {
+  fruitCostByCountry,
+  getCostEfficiencyScore,
+  regionalFlavorBonus,
+} from "../data/regionalData";
 
 export type FactorDetail = {
   factor: Factor;
@@ -25,9 +31,24 @@ export type RankedConcept = {
   base: GelatoBase;
   conceptLabel: string;
   score: number;
+  baseScore: number;
   conceptProfile: FactorMap;
   factorDetails: FactorDetail[];
   explanation: string[];
+  regionalBonus: number;
+  regionalFlavorInfo: {
+    bonus: number;
+    reason: string;
+    familiarity: "high" | "medium" | "low" | "novel";
+  } | null;
+  costEfficiency: {
+    score: number;
+    costIndex: number;
+    supplyReliability: number;
+    sourceNote: string;
+  } | null;
+  priceFit: number | null;
+  estimatedMargin: number | null;
 };
 
 const clampFactor = (value: number) => Math.min(5, Math.max(1, value));
@@ -108,16 +129,20 @@ export const rankFruitConcepts = ({
   base,
   fruits,
   weights,
+  pricePoint,
 }: {
   country: CountryOption;
   base: GelatoBase;
   fruits: FruitOption[];
   weights: StrategyPreset["weights"];
+  pricePoint?: number;
 }): RankedConcept[] => {
   const maxPossibleScore = factors.reduce(
     (total, factor) => total + 5 * weights[factor],
     0,
   );
+
+  const pricing = pricingByCountry[country.id];
 
   return fruits
     .map((fruit) => {
@@ -143,17 +168,157 @@ export const rankFruitConcepts = ({
         0,
       );
 
+      const baseScore = roundToTenth((weightedScore / maxPossibleScore) * 100);
+
+      // Regional flavor bonus
+      const flavorData = regionalFlavorBonus[country.id]?.[fruit.id];
+      const regionalBonus = flavorData ? flavorData.bonus : 0;
+      const regionalFlavorInfo = flavorData
+        ? { bonus: flavorData.bonus, reason: flavorData.reason, familiarity: flavorData.familiarity }
+        : null;
+
+      // Cost efficiency
+      const costData = fruitCostByCountry[fruit.id]?.[country.id];
+      const costEfficiency = costData
+        ? {
+            score: getCostEfficiencyScore(costData.costIndex, costData.supplyReliability),
+            costIndex: costData.costIndex,
+            supplyReliability: costData.supplyReliability,
+            sourceNote: costData.sourceNote,
+          }
+        : null;
+
+      // Cost efficiency adjustment (0 to +3 points)
+      const costBonus = costEfficiency
+        ? roundToTenth(((costEfficiency.score - 2.5) / 2.5) * 3)
+        : 0;
+
+      // Price fit
+      let priceFitValue: number | null = null;
+      let priceBonus = 0;
+      let estimatedMargin: number | null = null;
+      if (pricePoint !== undefined && pricePoint > 0 && pricing) {
+        priceFitValue = roundToTenth(
+          calculatePriceFit(pricePoint, pricing.avgMarketPrice, pricing.priceSensitivity),
+        );
+        // Price impact: ±5 points based on fit (5 = perfect = +5, 1 = poor = -5)
+        priceBonus = roundToTenth((priceFitValue - 3) * 2.5);
+        const fruitCostIndex = costData?.costIndex ?? 2.5;
+        estimatedMargin = roundToTenth(
+          pricePoint - (baseProductionCostValue(base.id) * fruitCostIndex * 0.3 * (pricing.costMultiplier)),
+        );
+      }
+
+      const adjustedScore = Math.min(
+        100,
+        Math.max(0, roundToTenth(baseScore + regionalBonus * 5 + costBonus + priceBonus)),
+      );
+
       return {
         fruit,
         base,
         conceptLabel: `${fruit.label} ${base.label}`,
-        score: roundToTenth((weightedScore / maxPossibleScore) * 100),
+        score: adjustedScore,
+        baseScore,
         conceptProfile,
         factorDetails,
         explanation: buildExplanation(country, base, fruit, factorDetails),
+        regionalBonus: roundToTenth(regionalBonus * 5),
+        regionalFlavorInfo,
+        costEfficiency,
+        priceFit: priceFitValue,
+        estimatedMargin,
       };
     })
     .sort((left, right) => right.score - left.score);
+};
+
+function baseProductionCostValue(baseId: string): number {
+  const costs: Record<string, number> = {
+    sorbet: 2,
+    "premium-fruit-gelato": 4,
+    "vegan-gelato": 3,
+    "milk-gelato": 2.5,
+  };
+  return costs[baseId] ?? 2.5;
+}
+
+// Benchmark utility: score a single combination
+export const scoreSingleCombination = ({
+  country,
+  base,
+  fruit,
+  weights,
+}: {
+  country: CountryOption;
+  base: GelatoBase;
+  fruit: FruitOption;
+  weights: StrategyPreset["weights"];
+}): number => {
+  const results = rankFruitConcepts({
+    country,
+    base,
+    fruits: [fruit],
+    weights,
+  });
+  return results[0]?.score ?? 0;
+};
+
+// Benchmark: generate full cross-reference matrix
+export type BenchmarkEntry = {
+  fruitId: string;
+  fruitLabel: string;
+  baseId: string;
+  baseLabel: string;
+  scores: Record<string, number>; // countryId → score
+  min: number;
+  max: number;
+  avg: number;
+  bestCountry: string;
+};
+
+export const generateBenchmarkMatrix = ({
+  countries,
+  bases,
+  fruits,
+  weights,
+}: {
+  countries: CountryOption[];
+  bases: GelatoBase[];
+  fruits: FruitOption[];
+  weights: StrategyPreset["weights"];
+}): BenchmarkEntry[] => {
+  const entries: BenchmarkEntry[] = [];
+
+  for (const base of bases) {
+    for (const fruit of fruits) {
+      const scores: Record<string, number> = {};
+      for (const country of countries) {
+        scores[country.id] = scoreSingleCombination({ country, base, fruit, weights });
+      }
+
+      const scoreValues = Object.values(scores);
+      const min = Math.min(...scoreValues);
+      const max = Math.max(...scoreValues);
+      const avg = roundToTenth(scoreValues.reduce((s, v) => s + v, 0) / scoreValues.length);
+      const bestCountryId = Object.entries(scores).sort(([, a], [, b]) => b - a)[0][0];
+      const bestCountry = countries.find((c) => c.id === bestCountryId)?.label ?? bestCountryId;
+
+      entries.push({
+        fruitId: fruit.id,
+        fruitLabel: fruit.label,
+        baseId: base.id,
+        baseLabel: base.label,
+        scores,
+        min,
+        max,
+        avg,
+        bestCountry,
+      });
+    }
+  }
+
+  return entries.sort((a, b) => b.max - a.max);
 };
 
 export const getPresetWeights = (preset: StrategyPreset): FactorMap => ({
