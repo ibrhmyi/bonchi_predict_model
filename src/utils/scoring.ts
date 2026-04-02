@@ -10,7 +10,7 @@ import {
   type GelatoBase,
   type StrategyPreset,
 } from "../data/marketFit";
-import { calculatePriceFit, pricingByCountry } from "../data/pricing";
+import { baseProductionCost, calculatePriceFit, pricingByCountry } from "../data/pricing";
 import {
   fruitCostByCountry,
   getCostDollarSign,
@@ -18,6 +18,7 @@ import {
   getSupplyLabel,
   regionalFlavorBonus,
 } from "../data/regionalData";
+import { defaultScoringConfig, type ScoringConfig } from "../data/scoringConfig";
 
 export type FactorDetail = {
   factor: Factor;
@@ -67,30 +68,19 @@ const fruitWeightedFactor = (
 export const buildConceptProfile = (
   base: GelatoBase,
   fruit: FruitOption,
-): FactorMap => ({
-  cream: base.profile.cream,
-  fruit: fruitWeightedFactor(base.profile.fruit, fruit.profile.fruit, 0.7, 0.3),
-  refreshing: fruitWeightedFactor(
-    base.profile.refreshing,
-    fruit.profile.refreshing,
-    0.7,
-    0.3,
-  ),
-  health: fruitWeightedFactor(base.profile.health, fruit.profile.health, 0.7, 0.3),
-  premium: fruitWeightedFactor(base.profile.premium, fruit.profile.premium, 0.7, 0.3),
-  culturalFit: fruitWeightedFactor(
-    base.profile.culturalFit,
-    fruit.profile.culturalFit,
-    0.6,
-    0.4,
-  ),
-  exoticAppetite: fruitWeightedFactor(
-    base.profile.exoticAppetite,
-    fruit.profile.exoticAppetite,
-    0.6,
-    0.4,
-  ),
-});
+  config: ScoringConfig = defaultScoringConfig,
+): FactorMap => {
+  const { standardBaseWeight: sB, standardFruitWeight: sF, culturalBaseWeight: cB, culturalFruitWeight: cF } = config.blending;
+  return {
+    cream: base.profile.cream,
+    fruit: fruitWeightedFactor(base.profile.fruit, fruit.profile.fruit, sB, sF),
+    refreshing: fruitWeightedFactor(base.profile.refreshing, fruit.profile.refreshing, sB, sF),
+    health: fruitWeightedFactor(base.profile.health, fruit.profile.health, sB, sF),
+    premium: fruitWeightedFactor(base.profile.premium, fruit.profile.premium, sB, sF),
+    culturalFit: fruitWeightedFactor(base.profile.culturalFit, fruit.profile.culturalFit, cB, cF),
+    exoticAppetite: fruitWeightedFactor(base.profile.exoticAppetite, fruit.profile.exoticAppetite, cB, cF),
+  };
+};
 
 function generateDataDrivenInsights(
   country: CountryOption,
@@ -103,6 +93,7 @@ function generateDataDrivenInsights(
   pricePoint: number | undefined,
   regionalBonus: number,
   factorDetails: FactorDetail[],
+  maxInsights = 4,
 ): string[] {
   const insights: string[] = [];
 
@@ -161,7 +152,7 @@ function generateDataDrivenInsights(
     );
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, maxInsights);
 }
 
 export const rankFruitConcepts = ({
@@ -170,12 +161,14 @@ export const rankFruitConcepts = ({
   fruits,
   weights,
   pricePoint,
+  config = defaultScoringConfig,
 }: {
   country: CountryOption;
   base: GelatoBase;
   fruits: FruitOption[];
   weights: StrategyPreset["weights"];
   pricePoint?: number;
+  config?: ScoringConfig;
 }): RankedConcept[] => {
   const maxPossibleScore = factors.reduce(
     (total, factor) => total + 5 * weights[factor],
@@ -186,7 +179,7 @@ export const rankFruitConcepts = ({
 
   return fruits
     .map((fruit) => {
-      const conceptProfile = buildConceptProfile(base, fruit);
+      const conceptProfile = buildConceptProfile(base, fruit, config);
       const factorDetails = factors.map((factor) => {
         const countryValue = country.profile[factor];
         const conceptValue = conceptProfile[factor];
@@ -210,15 +203,15 @@ export const rankFruitConcepts = ({
 
       const baseScore = roundToTenth((weightedScore / maxPossibleScore) * 100);
 
-      // Regional flavor bonus — scaled to +8 points max for wider spread
+      // Regional flavor bonus
       const flavorData = regionalFlavorBonus[country.id]?.[fruit.id];
       const regionalBonusRaw = flavorData ? flavorData.bonus : 0;
-      const regionalBonus = roundToTenth(regionalBonusRaw * 8);
+      const regionalBonus = roundToTenth(regionalBonusRaw * config.regionalBonus.maxPoints);
       const regionalFlavorInfo = flavorData
         ? { bonus: flavorData.bonus, reason: flavorData.reason, familiarity: flavorData.familiarity }
         : null;
 
-      // Cost efficiency — increased impact
+      // Cost efficiency
       const costData = fruitCostByCountry[fruit.id]?.[country.id];
       const costEfficiency = costData
         ? {
@@ -229,9 +222,9 @@ export const rankFruitConcepts = ({
           }
         : null;
 
-      // Cost efficiency bonus: -4 to +5 points
+      // Cost efficiency bonus
       const costBonus = costEfficiency
-        ? roundToTenth(((costEfficiency.score - 2.5) / 2.5) * 5)
+        ? roundToTenth(((costEfficiency.score - config.costBonus.neutralScore) / config.costBonus.neutralScore) * config.costBonus.maxPoints)
         : 0;
 
       // Price fit
@@ -242,16 +235,16 @@ export const rankFruitConcepts = ({
         priceFitValue = roundToTenth(
           calculatePriceFit(pricePoint, pricing.avgMarketPrice, pricing.priceSensitivity),
         );
-        priceBonus = roundToTenth((priceFitValue - 3) * 2.5);
+        priceBonus = roundToTenth((priceFitValue - config.priceBonus.neutralFit) * config.priceBonus.multiplier);
         const fruitCostIndex = costData?.costIndex ?? 2.5;
         estimatedMargin = roundToTenth(
-          pricePoint - (baseProductionCostValue(base.id) * fruitCostIndex * 0.3 * (pricing.costMultiplier)),
+          pricePoint - (baseProductionCostValue(base.id) * fruitCostIndex * config.margin.costFraction * pricing.costMultiplier),
         );
       }
 
       const adjustedScore = Math.min(
-        100,
-        Math.max(0, roundToTenth(baseScore + regionalBonus + costBonus + priceBonus)),
+        config.scoreBounds.max,
+        Math.max(config.scoreBounds.min, roundToTenth(baseScore + regionalBonus + costBonus + priceBonus)),
       );
 
       const insights = generateDataDrivenInsights(
@@ -265,6 +258,7 @@ export const rankFruitConcepts = ({
         pricePoint,
         regionalBonus,
         factorDetails,
+        config.maxInsights,
       );
 
       return {
@@ -288,13 +282,7 @@ export const rankFruitConcepts = ({
 };
 
 function baseProductionCostValue(baseId: string): number {
-  const costs: Record<string, number> = {
-    sorbet: 2,
-    "premium-fruit-gelato": 4,
-    "vegan-gelato": 3,
-    "milk-gelato": 2.5,
-  };
-  return costs[baseId] ?? 2.5;
+  return baseProductionCost[baseId] ?? 2.5;
 }
 
 export const scoreSingleCombination = ({

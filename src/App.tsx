@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CountrySelector } from "./components/CountrySelector";
+import { DataHealthPanel } from "./components/DataHealthPanel";
 import { ModelLibrary } from "./components/ModelLibrary";
 import { ResultsPanel } from "./components/ResultsPanel";
+import { ScenarioPanel } from "./components/ScenarioPanel";
 import {
   countries as initialCountries,
   defaultSelection,
@@ -19,6 +21,9 @@ import {
   type StrategyPreset,
 } from "./data/marketFit";
 import { pricingByCountry } from "./data/pricing";
+import { exportAsCSV, exportAsJSON } from "./utils/exportResults";
+import { loadState, saveState } from "./utils/persistence";
+import type { Scenario } from "./utils/scenarios";
 import { getPresetWeights, rankFruitConcepts } from "./utils/scoring";
 
 type ActiveTab = "decision-tool" | "model-library";
@@ -26,19 +31,23 @@ type ActiveTab = "decision-tool" | "model-library";
 const clampInput = (value: number) => Math.min(5, Math.max(1, value));
 
 export default function App() {
+  // ── Hydrate from localStorage on first render ──
+  const persisted = useRef(loadState());
+  const initial = persisted.current;
+
   const [activeTab, setActiveTab] = useState<ActiveTab>("decision-tool");
-  const [countries, setCountries] = useState<CountryOption[]>(initialCountries);
-  const [fruits, setFruits] = useState<FruitOption[]>(initialFruits);
-  const [bases, setBases] = useState<GelatoBase[]>(initialGelatoBases);
-  const [presets, setPresets] = useState<StrategyPreset[]>(initialStrategyPresets);
-  const [countryId, setCountryId] = useState<string>(defaultSelection.countryId);
-  const [baseId, setBaseId] = useState<string>(defaultSelection.baseId);
-  const [presetId, setPresetId] = useState<string>(defaultSelection.presetId);
-  const [pricePoint, setPricePoint] = useState(5);
+  const [countries, setCountries] = useState<CountryOption[]>(initial?.countries ?? initialCountries);
+  const [fruits, setFruits] = useState<FruitOption[]>(initial?.fruits ?? initialFruits);
+  const [bases, setBases] = useState<GelatoBase[]>(initial?.bases ?? initialGelatoBases);
+  const [presets, setPresets] = useState<StrategyPreset[]>(initial?.presets ?? initialStrategyPresets);
+  const [countryId, setCountryId] = useState<string>(initial?.countryId ?? defaultSelection.countryId);
+  const [baseId, setBaseId] = useState<string>(initial?.baseId ?? defaultSelection.baseId);
+  const [presetId, setPresetId] = useState<string>(initial?.presetId ?? defaultSelection.presetId);
+  const [pricePoint, setPricePoint] = useState(initial?.pricePoint ?? 5);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const selectedPreset = presets.find((preset) => preset.id === presetId) ?? presets[0];
-  const [weights, setWeights] = useState(getPresetWeights(selectedPreset));
+  const [weights, setWeights] = useState(initial?.weights ?? getPresetWeights(selectedPreset));
 
   useEffect(() => {
     setWeights(getPresetWeights(selectedPreset));
@@ -62,6 +71,11 @@ export default function App() {
     }
   }, [presets, presetId]);
 
+  // ── Persist state to localStorage on changes ──
+  useEffect(() => {
+    saveState({ countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights });
+  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights]);
+
   const selectedCountry = countries.find((c) => c.id === countryId) ?? countries[0];
   const selectedBase = bases.find((b) => b.id === baseId) ?? bases[0];
   const safePreset = selectedPreset ?? presets[0];
@@ -77,6 +91,39 @@ export default function App() {
           pricePoint,
         })
       : [];
+
+  // ── Export handlers ──
+  const handleExportJSON = useCallback(() => {
+    if (!selectedCountry || !selectedBase || !safePreset) return;
+    exportAsJSON(ranking, {
+      country: selectedCountry.label,
+      base: selectedBase.label,
+      strategy: safePreset.label,
+      pricePoint,
+      exportedAt: new Date().toISOString(),
+    });
+  }, [ranking, selectedCountry, selectedBase, safePreset, pricePoint]);
+
+  const handleExportCSV = useCallback(() => {
+    if (!selectedCountry || !selectedBase || !safePreset) return;
+    exportAsCSV(ranking, {
+      country: selectedCountry.label,
+      base: selectedBase.label,
+      strategy: safePreset.label,
+      pricePoint,
+      exportedAt: new Date().toISOString(),
+    });
+  }, [ranking, selectedCountry, selectedBase, safePreset, pricePoint]);
+
+  // ── Scenario restore ──
+  const handleRestoreScenario = useCallback((scenario: Scenario) => {
+    setCountryId(scenario.countryId);
+    setBaseId(scenario.baseId);
+    setPresetId(scenario.presetId);
+    setPricePoint(scenario.pricePoint);
+    setWeights(scenario.weights);
+    setActiveTab("decision-tool");
+  }, []);
 
   const tabButtonClass = (tab: ActiveTab) =>
     `rounded-full px-5 py-2.5 text-sm font-medium transition ${
@@ -131,6 +178,45 @@ export default function App() {
               base={selectedBase}
               preset={safePreset}
               ranking={ranking}
+            />
+
+            {/* Export & Scenario row */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleExportJSON}
+                className="inline-flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-sm font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export JSON
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-sm font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export CSV
+              </button>
+            </div>
+
+            {/* Scenario snapshots */}
+            <ScenarioPanel
+              countryId={countryId}
+              baseId={baseId}
+              presetId={presetId}
+              pricePoint={pricePoint}
+              weights={weights}
+              topConcept={ranking[0]?.conceptLabel ?? "—"}
+              topScore={ranking[0]?.score ?? 0}
+              countryLabel={selectedCountry.label}
+              baseLabel={selectedBase.label}
+              presetLabel={safePreset.label}
+              onRestore={handleRestoreScenario}
             />
 
             {/* Advanced Settings — collapsed by default */}
@@ -254,6 +340,7 @@ export default function App() {
         ) : null}
 
         {activeTab === "model-library" ? (
+          <div className="space-y-6">
           <ModelLibrary
             countries={countries}
             fruits={fruits}
@@ -342,6 +429,8 @@ export default function App() {
               )
             }
           />
+          <DataHealthPanel countries={countries} fruits={fruits} bases={bases} />
+          </div>
         ) : null}
       </div>
     </main>
