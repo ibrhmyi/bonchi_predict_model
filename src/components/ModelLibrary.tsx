@@ -50,9 +50,31 @@ function ScoreInput({
       step="0.1"
       value={value}
       onChange={(event) => onChange(clampEntry(Number(event.target.value) || 1))}
-      className="w-20 rounded-xl border border-sand bg-bone px-3 py-2 text-sm text-ink outline-none transition focus:border-gold"
+      className="w-20 rounded-xl border border-sand bg-bone px-3 py-2 text-sm text-ink outline-none transition focus:border-[#2D6A4F]"
     />
   );
+}
+
+function FactorHeader({ factor }: { factor: Factor }) {
+  return (
+    <th className="group relative px-3 py-2">
+      <span className="cursor-help border-b border-dashed border-stone/40">
+        {factorLabels[factor]}
+      </span>
+      <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 w-48 -translate-x-1/2 rounded-xl border border-sand bg-white p-3 text-xs font-normal normal-case tracking-normal text-stone opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+        <span className="font-medium text-ink">{factorLabels[factor]}</span> (1–5):{" "}
+        {factorDefinitions[factor]}
+      </div>
+    </th>
+  );
+}
+
+function qualitativeLabel(value: number): string {
+  if (value >= 4.5) return "very high";
+  if (value >= 3.5) return "high";
+  if (value >= 2.5) return "moderate";
+  if (value >= 1.5) return "low";
+  return "very low";
 }
 
 function TableShell({
@@ -70,15 +92,12 @@ function TableShell({
     <section className="rounded-4xl border border-white/70 bg-white/80 p-6 shadow-panel backdrop-blur xl:p-8">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone">
-            Model library
-          </p>
-          <h2 className="mt-2 font-serif text-3xl text-ink">{title}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone">{subtitle}</p>
+          <h2 className="font-serif text-2xl text-ink">{title}</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-stone">{subtitle}</p>
         </div>
         {action}
       </div>
-      <div className="mt-6 overflow-x-auto">{children}</div>
+      <div className="mt-5 overflow-x-auto">{children}</div>
     </section>
   );
 }
@@ -103,7 +122,7 @@ export function ModelLibrary({
 }: ModelLibraryProps) {
   return (
     <div className="space-y-6">
-      {/* Benchmark Matrix */}
+      {/* Benchmark Matrix — prominent */}
       <BenchmarkMatrix
         countries={countries}
         bases={bases}
@@ -112,13 +131,13 @@ export function ModelLibrary({
       />
 
       <TableShell
-        title="Countries"
-        subtitle="Market demand profiles on a 1 to 5 scale. Edit directly to pressure-test the recommendation engine."
+        title="Market Profiles"
+        subtitle="How each country's consumers value different product attributes (1–5 scale). Hover column headers for definitions."
         action={
           <button
             type="button"
             onClick={onAddCountry}
-            className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
+            className="inline-flex items-center rounded-full bg-[#1B4332] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
           >
             Add Country
           </button>
@@ -129,9 +148,7 @@ export function ModelLibrary({
             <tr className="text-left text-xs uppercase tracking-[0.24em] text-stone">
               <th className="px-3 py-2">Country</th>
               {factors.map((factor) => (
-                <th key={factor} className="px-3 py-2">
-                  {factorLabels[factor]}
-                </th>
+                <FactorHeader key={factor} factor={factor} />
               ))}
             </tr>
           </thead>
@@ -142,15 +159,20 @@ export function ModelLibrary({
                   <input
                     value={country.label}
                     onChange={(event) => onCountryLabelChange(country.id, event.target.value)}
-                    className="w-40 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-gold"
+                    className="w-40 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-[#2D6A4F]"
                   />
                 </td>
                 {factors.map((factor) => (
                   <td key={factor} className="px-3 py-3">
-                    <ScoreInput
-                      value={country.profile[factor]}
-                      onChange={(value) => onCountryFactorChange(country.id, factor, value)}
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <ScoreInput
+                        value={country.profile[factor]}
+                        onChange={(value) => onCountryFactorChange(country.id, factor, value)}
+                      />
+                      <span className="hidden text-[10px] text-stone/60 xl:inline">
+                        {qualitativeLabel(country.profile[factor])}
+                      </span>
+                    </div>
                   </td>
                 ))}
               </tr>
@@ -160,13 +182,13 @@ export function ModelLibrary({
       </TableShell>
 
       <TableShell
-        title="Fruits"
-        subtitle="Fruit-level assumptions that blend into the selected product base to produce the final concept profile."
+        title="Fruit Characteristics"
+        subtitle="Fruit-level attributes that blend with the product base to form the final concept profile."
         action={
           <button
             type="button"
             onClick={onAddFruit}
-            className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
+            className="inline-flex items-center rounded-full bg-[#1B4332] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
           >
             Add Fruit
           </button>
@@ -177,9 +199,7 @@ export function ModelLibrary({
             <tr className="text-left text-xs uppercase tracking-[0.24em] text-stone">
               <th className="px-3 py-2">Fruit</th>
               {fruitFactors.map((factor) => (
-                <th key={factor} className="px-3 py-2">
-                  {factorLabels[factor]}
-                </th>
+                <FactorHeader key={factor} factor={factor} />
               ))}
             </tr>
           </thead>
@@ -190,7 +210,7 @@ export function ModelLibrary({
                   <input
                     value={fruit.label}
                     onChange={(event) => onFruitLabelChange(fruit.id, event.target.value)}
-                    className="w-40 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-gold"
+                    className="w-48 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-[#2D6A4F]"
                   />
                 </td>
                 {fruitFactors.map((factor) => (
@@ -208,17 +228,15 @@ export function ModelLibrary({
       </TableShell>
 
       <TableShell
-        title="Product Bases"
-        subtitle="Base profiles shape texture, premium level, and the non-fruit characteristics of the final concept."
+        title="Product Formats"
+        subtitle="Base profiles shape texture, premium positioning, and non-fruit characteristics."
       >
         <table className="min-w-full border-separate border-spacing-y-2">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.24em] text-stone">
               <th className="px-3 py-2">Base</th>
               {factors.map((factor) => (
-                <th key={factor} className="px-3 py-2">
-                  {factorLabels[factor]}
-                </th>
+                <FactorHeader key={factor} factor={factor} />
               ))}
             </tr>
           </thead>
@@ -229,7 +247,7 @@ export function ModelLibrary({
                   <input
                     value={base.label}
                     onChange={(event) => onBaseLabelChange(base.id, event.target.value)}
-                    className="w-44 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-gold"
+                    className="w-44 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-[#2D6A4F]"
                   />
                 </td>
                 {factors.map((factor) => (
@@ -247,17 +265,15 @@ export function ModelLibrary({
       </TableShell>
 
       <TableShell
-        title="Strategy Presets"
-        subtitle="Preset weights determine which factors dominate the ranking. Editing these changes both tabs immediately."
+        title="Scoring Weights"
+        subtitle="Preset weights determine which factors dominate the ranking. Changes apply to both tabs."
       >
         <table className="min-w-full border-separate border-spacing-y-2">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.24em] text-stone">
               <th className="px-3 py-2">Preset</th>
               {factors.map((factor) => (
-                <th key={factor} className="px-3 py-2">
-                  {factorLabels[factor]}
-                </th>
+                <FactorHeader key={factor} factor={factor} />
               ))}
               <th className="px-3 py-2">Summary</th>
             </tr>
@@ -269,7 +285,7 @@ export function ModelLibrary({
                   <input
                     value={preset.label}
                     onChange={(event) => onPresetLabelChange(preset.id, event.target.value)}
-                    className="w-36 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-gold"
+                    className="w-36 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-[#2D6A4F]"
                   />
                 </td>
                 {factors.map((factor) => (
@@ -284,7 +300,7 @@ export function ModelLibrary({
                   <input
                     value={preset.summary}
                     onChange={(event) => onPresetSummaryChange(preset.id, event.target.value)}
-                    className="w-80 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-gold"
+                    className="w-80 rounded-xl border border-sand bg-bone px-3 py-2 outline-none transition focus:border-[#2D6A4F]"
                   />
                 </td>
               </tr>
@@ -292,21 +308,6 @@ export function ModelLibrary({
           </tbody>
         </table>
       </TableShell>
-
-      <section className="rounded-4xl border border-white/70 bg-white/80 p-6 shadow-panel backdrop-blur xl:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone">
-          Factor definitions
-        </p>
-        <h2 className="mt-2 font-serif text-3xl text-ink">Glossary</h2>
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {factors.map((factor) => (
-            <article key={factor} className="rounded-3xl border border-sand bg-[#fffdfa] p-5">
-              <h3 className="text-lg font-medium text-ink">{factorLabels[factor]}</h3>
-              <p className="mt-2 text-sm leading-6 text-stone">{factorDefinitions[factor]}</p>
-            </article>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

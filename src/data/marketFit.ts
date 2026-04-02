@@ -221,7 +221,7 @@ export const fruits: FruitOption[] = [
   },
   {
     id: "mikan",
-    label: "Mikan",
+    label: "Mandarin Orange (Mikan)",
     profile: {
       fruit: 5,
       refreshing: 5,

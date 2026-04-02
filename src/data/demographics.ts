@@ -71,13 +71,24 @@ export const demographicsByCountry: Record<string, Demographics> = {
   },
 };
 
-export function calculateTargetableMarket(demographics: Demographics): number {
+export function calculateAddressablePopulation(demographics: Demographics): number {
   const avgDemandIndex =
     demographics.ageDistribution.reduce(
       (sum, group) => sum + group.percentage * group.gelatoDemandIndex,
       0,
     ) / 100;
+  const raw = demographics.population * (demographics.urbanRate / 100) * (avgDemandIndex / 5);
+  return Math.round(Math.min(demographics.population, raw) * 100) / 100;
+}
+
+export function calculateAnnualServings(demographics: Demographics): number {
+  const avgDemandIndex =
+    demographics.ageDistribution.reduce(
+      (sum, group) => sum + group.percentage * group.gelatoDemandIndex,
+      0,
+    ) / 100;
+  const purchaseFrequency = 1.5;
   return Math.round(
-    demographics.population * avgDemandIndex * (demographics.urbanRate / 100) * 100,
+    demographics.population * (demographics.urbanRate / 100) * avgDemandIndex * purchaseFrequency * 100,
   ) / 100;
 }

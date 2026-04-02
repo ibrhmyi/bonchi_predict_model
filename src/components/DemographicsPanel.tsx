@@ -1,4 +1,4 @@
-import { calculateTargetableMarket, demographicsByCountry } from "../data/demographics";
+import { calculateAddressablePopulation, calculateAnnualServings, demographicsByCountry } from "../data/demographics";
 
 type DemographicsPanelProps = {
   countryId: string;
@@ -22,7 +22,8 @@ export function DemographicsPanel({ countryId, countryLabel }: DemographicsPanel
   const data = demographicsByCountry[countryId];
   if (!data) return null;
 
-  const targetable = calculateTargetableMarket(data);
+  const addressable = calculateAddressablePopulation(data);
+  const annualServings = calculateAnnualServings(data);
 
   return (
     <article className="rounded-3xl border border-[#e8decd] bg-[#fffdf9] p-5">
@@ -41,7 +42,7 @@ export function DemographicsPanel({ countryId, countryLabel }: DemographicsPanel
 
       <div className="mt-5">
         <div className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-stone">
-          Age distribution & gelato demand
+          Age distribution & dessert demand
         </div>
         <div className="space-y-2">
           {data.ageDistribution.map((group) => (
@@ -66,7 +67,7 @@ export function DemographicsPanel({ countryId, countryLabel }: DemographicsPanel
                         ? "#B78543"
                         : "#7d7468",
                 }}
-                title={`Gelato demand index: ${group.gelatoDemandIndex}`}
+                title={`Demand index: ${group.gelatoDemandIndex}`}
               >
                 {group.gelatoDemandIndex.toFixed(1)}
               </div>
@@ -75,20 +76,24 @@ export function DemographicsPanel({ countryId, countryLabel }: DemographicsPanel
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-3 gap-3">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-2xl border border-sand bg-bone/60 px-3 py-2.5 text-center">
-          <div className="text-xs text-stone">Male / Female</div>
+          <div className="text-[10px] uppercase tracking-wider text-stone">Male / Female</div>
           <div className="mt-1 text-sm font-medium text-ink">
             {data.genderSplit.male}% / {data.genderSplit.female}%
           </div>
         </div>
         <div className="rounded-2xl border border-sand bg-bone/60 px-3 py-2.5 text-center">
-          <div className="text-xs text-stone">Urban rate</div>
+          <div className="text-[10px] uppercase tracking-wider text-stone">Urban rate</div>
           <div className="mt-1 text-sm font-medium text-ink">{data.urbanRate}%</div>
         </div>
         <div className="rounded-2xl border border-sand bg-bone/60 px-3 py-2.5 text-center">
-          <div className="text-xs text-stone">Targetable</div>
-          <div className="mt-1 text-sm font-medium text-ink">{targetable}M</div>
+          <div className="text-[10px] uppercase tracking-wider text-stone">Addressable pop.</div>
+          <div className="mt-1 text-sm font-medium text-ink">{addressable}M</div>
+        </div>
+        <div className="rounded-2xl border border-sand bg-bone/60 px-3 py-2.5 text-center">
+          <div className="text-[10px] uppercase tracking-wider text-stone">Est. annual servings</div>
+          <div className="mt-1 text-sm font-medium text-ink">{annualServings}M</div>
         </div>
       </div>
 
