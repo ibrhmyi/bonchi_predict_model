@@ -28,16 +28,11 @@ function CollapsibleSection({
   label: string;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 rounded-2xl border border-sand bg-white/80 px-5 py-3.5 text-sm font-medium text-ink transition hover:border-[#2D6A4F]/30 hover:bg-white"
-      >
+    <details className="group rounded-3xl border border-white/70 bg-white/80 shadow-panel backdrop-blur open:bg-white">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
         <svg
-          className={`h-4 w-4 shrink-0 text-stone transition-transform ${open ? "rotate-90" : ""}`}
+          className="h-4 w-4 shrink-0 text-stone transition-transform group-open:rotate-90"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -45,10 +40,10 @@ function CollapsibleSection({
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
-        {label}
-      </button>
-      {open && <div className="mt-3">{children}</div>}
-    </div>
+        <span className="text-sm font-semibold text-ink">{label}</span>
+      </summary>
+      <div className="border-t border-sand/70 px-5 py-5">{children}</div>
+    </details>
   );
 }
 
@@ -85,7 +80,7 @@ function FactorBar({ label, score }: { label: string; score: number }) {
 export function ResultsPanel({
   country,
   base,
-  preset,
+  preset: _preset,
   ranking,
 }: ResultsPanelProps) {
   const topPick = ranking[0];
@@ -243,14 +238,25 @@ export function ResultsPanel({
         </div>
       </article>
 
-      {/* Ranked list */}
-      <article className="rounded-4xl border border-white/70 bg-white/80 p-6 shadow-panel backdrop-blur xl:p-8">
-        <h3 className="font-serif text-2xl text-ink">Top Products</h3>
-        <p className="mt-1 text-sm text-stone">
-          All {base.label.toLowerCase()} concepts ranked for {country.label} — {preset.label.toLowerCase()} strategy.
-        </p>
-
-        <div className="mt-5 space-y-2.5">
+      {/* Ranked list — collapsed by default */}
+      <details className="group rounded-3xl border border-white/70 bg-white/80 shadow-panel backdrop-blur open:bg-white">
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+          <svg
+            className="h-4 w-4 shrink-0 text-stone transition-transform group-open:rotate-90"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-sm font-semibold text-ink">See full ranking</span>
+          <span className="ml-auto truncate text-xs text-stone">
+            {ranking.length} {base.label.toLowerCase()} concepts
+          </span>
+        </summary>
+        <div className="border-t border-sand/70 px-5 py-5">
+        <div className="space-y-2.5">
           {ranking.map((entry, index) => {
             const flavorInfo = entry.regionalFlavorInfo;
             const familiarityStyle = flavorInfo
@@ -322,14 +328,15 @@ export function ResultsPanel({
             );
           })}
         </div>
-      </article>
+        </div>
+      </details>
 
       {/* Collapsible sections */}
-      <CollapsibleSection label={`\u{1F4CA} View ${country.label} demographics`}>
+      <CollapsibleSection label={`${country.label} demographics`}>
         <DemographicsPanel countryId={country.id} countryLabel={country.label} />
       </CollapsibleSection>
 
-      <CollapsibleSection label={`\u{1F3EA} View competitor landscape in ${country.label}`}>
+      <CollapsibleSection label={`Competitor landscape in ${country.label}`}>
         <CompetitorPanel countryId={country.id} countryLabel={country.label} />
       </CollapsibleSection>
     </section>

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChatPanel } from "./components/ChatPanel";
 import { CountrySelector } from "./components/CountrySelector";
 import { DataHealthPanel } from "./components/DataHealthPanel";
 import { MethodologyPanel } from "./components/MethodologyPanel";
 import { ModelLibrary } from "./components/ModelLibrary";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { ScenarioPanel } from "./components/ScenarioPanel";
+import { useToolHandlers } from "./llm/useToolHandlers";
+import { debounce, loadCloudState, saveCloudState } from "./utils/cloudPersistence";
 import {
   countries as initialCountries,
   defaultSelection,
@@ -42,6 +45,42 @@ type ActiveTab = "analyze" | "data";
 
 const clampInput = (value: number) => Math.min(5, Math.max(1, value));
 
+// Collapsible "shelf" — neutral row that opens to reveal detail.
+// Used throughout Analyze to keep secondary stuff hidden until asked for.
+function Shelf({
+  label,
+  summary,
+  children,
+  defaultOpen = false,
+}: {
+  label: string;
+  summary?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      className="group rounded-3xl border border-white/70 bg-white/80 shadow-panel backdrop-blur open:bg-white"
+      {...(defaultOpen ? { open: true } : {})}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+        <svg
+          className="h-4 w-4 shrink-0 text-stone transition-transform group-open:rotate-90"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="text-sm font-semibold text-ink">{label}</span>
+        {summary && <span className="ml-auto truncate text-xs text-stone">{summary}</span>}
+      </summary>
+      <div className="border-t border-sand/70 px-5 py-5">{children}</div>
+    </details>
+  );
+}
+
 export default function App() {
   const persisted = useRef(loadState());
   const initial = persisted.current;
@@ -74,14 +113,82 @@ export default function App() {
   useEffect(() => { if (!bases.some((b) => b.id === baseId) && bases[0]) setBaseId(bases[0].id); }, [bases, baseId]);
   useEffect(() => { if (!presets.some((p) => p.id === presetId) && presets[0]) setPresetId(presets[0].id); }, [presets, presetId]);
 
-  // Persist everything
+  // Cloud sync — load workspace + chat history once on mount
+  const [initialChat, setInitialChat] = useState<unknown[] | undefined>(undefined);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
   useEffect(() => {
-    saveState({
+    let cancelled = false;
+    (async () => {
+      const [cloudWorkspace, cloudChat] = await Promise.all([
+        loadCloudState<{
+          countries?: CountryOption[]; fruits?: FruitOption[]; bases?: GelatoBase[]; presets?: StrategyPreset[];
+          countryId?: string; baseId?: string; presetId?: string; pricePoint?: number; weights?: typeof weights;
+          pricingByCountry?: Record<string, PricingProfile>;
+          regionalFlavorBonus?: Record<string, Record<string, RegionalFlavorEntry>>;
+          fruitCostByCountry?: Record<string, Record<string, FruitCostEntry>>;
+          baseProductionCost?: Record<string, number>;
+        }>("workspace"),
+        loadCloudState<unknown[]>("chat"),
+      ]);
+      if (cancelled) return;
+      if (cloudWorkspace) {
+        if (cloudWorkspace.countries) setCountries(cloudWorkspace.countries);
+        if (cloudWorkspace.fruits) setFruits(cloudWorkspace.fruits);
+        if (cloudWorkspace.bases) setBases(cloudWorkspace.bases);
+        if (cloudWorkspace.presets) setPresets(cloudWorkspace.presets);
+        if (cloudWorkspace.pricingByCountry) setPricingData(cloudWorkspace.pricingByCountry);
+        if (cloudWorkspace.regionalFlavorBonus) setFlavorData(cloudWorkspace.regionalFlavorBonus);
+        if (cloudWorkspace.fruitCostByCountry) setFruitCostData(cloudWorkspace.fruitCostByCountry);
+        if (cloudWorkspace.baseProductionCost) setProductionCostData(cloudWorkspace.baseProductionCost);
+        if (cloudWorkspace.countryId) setCountryId(cloudWorkspace.countryId);
+        if (cloudWorkspace.baseId) setBaseId(cloudWorkspace.baseId);
+        if (cloudWorkspace.presetId) setPresetId(cloudWorkspace.presetId);
+        if (typeof cloudWorkspace.pricePoint === "number") setPricePoint(cloudWorkspace.pricePoint);
+        if (cloudWorkspace.weights) setWeights(cloudWorkspace.weights);
+      }
+      setInitialChat(Array.isArray(cloudChat) ? cloudChat : []);
+      setCloudLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist everything — local immediately + cloud debounced
+  const debouncedCloudSave = useMemo(
+    () => debounce((payload: unknown) => { void saveCloudState("workspace", payload); }, 800),
+    [],
+  );
+  useEffect(() => {
+    const payload = {
       countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights,
       pricingByCountry: pricingData, regionalFlavorBonus: flavorData,
       fruitCostByCountry: fruitCostData, baseProductionCost: productionCostData,
-    });
-  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights, pricingData, flavorData, fruitCostData, productionCostData]);
+    };
+    saveState(payload);
+    if (cloudLoaded) debouncedCloudSave(payload);
+  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights, pricingData, flavorData, fruitCostData, productionCostData, cloudLoaded, debouncedCloudSave]);
+
+  // Debounced chat history sync
+  const debouncedChatSave = useMemo(
+    () => debounce((msgs: unknown[]) => { void saveCloudState("chat", msgs); }, 1200),
+    [],
+  );
+  const handleChatMessagesChange = useCallback((msgs: unknown[]) => {
+    if (cloudLoaded) debouncedChatSave(msgs);
+  }, [cloudLoaded, debouncedChatSave]);
+
+  // Tool handlers for the LLM
+  const handleToolCall = useToolHandlers(
+    {
+      countries, fruits, bases, presets,
+      pricingData, flavorData, fruitCostData, productionCostData,
+      countryId, baseId, presetId, pricePoint, weights,
+    },
+    {
+      setCountries, setFruits, setBases, setPresets,
+      setPricingData, setFlavorData, setFruitCostData, setProductionCostData,
+      setCountryId, setBaseId, setPresetId, setPricePoint,
+    },
+  );
 
   const selectedCountry = countries.find((c) => c.id === countryId) ?? countries[0];
   const selectedBase = bases.find((b) => b.id === baseId) ?? bases[0];
@@ -136,10 +243,13 @@ export default function App() {
   return (
     <main className="min-h-screen px-4 py-6 text-ink sm:px-6 lg:px-10 lg:py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.36em] text-stone">Bonchi</p>
             <h1 className="mt-1 font-serif text-4xl leading-none text-ink sm:text-5xl">Market Fit</h1>
+            <p className="mt-2 max-w-xl text-sm text-stone">
+              Which fruit gelato concept will sell best — market by market.
+            </p>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => setActiveTab("analyze")} className={tabClass("analyze")}>Analyze</button>
@@ -150,7 +260,7 @@ export default function App() {
         {/* ═══════════ ANALYZE TAB ═══════════ */}
         {activeTab === "analyze" && selectedCountry && selectedBase && safePreset ? (
           <div className="space-y-5">
-            {/* Country */}
+            {/* 1. Pick a market */}
             <CountrySelector
               countries={countries}
               selectedId={countryId}
@@ -158,8 +268,19 @@ export default function App() {
               pricingByCountry={pricingData}
             />
 
-            {/* Inline controls — base, strategy, price */}
-            <div className="rounded-3xl border border-white/70 bg-white/80 px-5 py-4 shadow-panel backdrop-blur">
+            {/* 2. The answer — hero card with "why this works" */}
+            <ResultsPanel
+              country={selectedCountry}
+              base={selectedBase}
+              preset={safePreset}
+              ranking={ranking}
+            />
+
+            {/* 3. Optional shelves — open only if the user wants detail */}
+            <Shelf
+              label="Tune the model"
+              summary={`${selectedBase.label} · ${safePreset.label} · $${pricePoint.toFixed(2)}`}
+            >
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-stone">Product base</span>
@@ -200,12 +321,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Weight overrides — compact */}
-              <details className="mt-3">
-                <summary className="cursor-pointer text-xs font-medium text-[#2D6A4F] hover:underline">
-                  Adjust factor weights
-                </summary>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-5 border-t border-sand/70 pt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone">
+                  Factor weights
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {factors.map((factor) => (
                     <label key={factor} className="block">
                       <div className="mb-1 flex items-center justify-between text-[11px]">
@@ -221,36 +341,32 @@ export default function App() {
                     </label>
                   ))}
                 </div>
-              </details>
-            </div>
+              </div>
+            </Shelf>
 
-            {/* Results */}
-            <ResultsPanel
-              country={selectedCountry}
-              base={selectedBase}
-              preset={safePreset}
-              ranking={ranking}
-            />
-
-            {/* Compact action row: export + snapshot */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => handleExport("json")}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3.5 py-2 text-xs font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40">
-                Export JSON
-              </button>
-              <button type="button" onClick={() => handleExport("csv")}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3.5 py-2 text-xs font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40">
-                Export CSV
-              </button>
-              <div className="ml-auto" />
-              <ScenarioPanel
-                countryId={countryId} baseId={baseId} presetId={presetId}
-                pricePoint={pricePoint} weights={weights}
-                topConcept={ranking[0]?.conceptLabel ?? "—"} topScore={ranking[0]?.score ?? 0}
-                countryLabel={selectedCountry.label} baseLabel={selectedBase.label}
-                presetLabel={safePreset.label} onRestore={handleRestoreScenario}
-              />
-            </div>
+            <Shelf
+              label="Save & export"
+              summary="snapshots · JSON · CSV"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => handleExport("json")}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40">
+                  Export JSON
+                </button>
+                <button type="button" onClick={() => handleExport("csv")}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-medium text-ink ring-1 ring-sand transition hover:ring-[#2D6A4F]/40">
+                  Export CSV
+                </button>
+                <div className="ml-auto" />
+                <ScenarioPanel
+                  countryId={countryId} baseId={baseId} presetId={presetId}
+                  pricePoint={pricePoint} weights={weights}
+                  topConcept={ranking[0]?.conceptLabel ?? "—"} topScore={ranking[0]?.score ?? 0}
+                  countryLabel={selectedCountry.label} baseLabel={selectedBase.label}
+                  presetLabel={safePreset.label} onRestore={handleRestoreScenario}
+                />
+              </div>
+            </Shelf>
           </div>
         ) : null}
 
@@ -327,6 +443,15 @@ export default function App() {
           </div>
         ) : null}
       </div>
+
+      {/* Floating AI assistant — available on every tab */}
+      {cloudLoaded && (
+        <ChatPanel
+          onToolCall={handleToolCall}
+          initialMessages={initialChat as never}
+          onMessagesChange={handleChatMessagesChange}
+        />
+      )}
     </main>
   );
 }
