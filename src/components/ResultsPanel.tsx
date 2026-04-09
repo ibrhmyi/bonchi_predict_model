@@ -30,8 +30,9 @@ function CollapsibleSection({
 }) {
   return (
     <details className="group rounded-3xl border border-white/70 bg-white/80 shadow-panel backdrop-blur open:bg-white">
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-3xl px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40">
         <svg
+          aria-hidden="true"
           className="h-4 w-4 shrink-0 text-stone transition-transform group-open:rotate-90"
           fill="none"
           viewBox="0 0 24 24"

@@ -3,15 +3,25 @@
 
 const API_BASE = "/api/state";
 
-export async function loadCloudState<T>(kind: "workspace" | "chat"): Promise<T | null> {
+export type LoadResult<T> = {
+  ok: boolean;
+  data: T | null;
+  /** Set when the request failed for any reason other than "no data yet". */
+  error?: string;
+};
+
+export async function loadCloudState<T>(kind: "workspace" | "chat"): Promise<LoadResult<T>> {
   try {
     const url = kind === "chat" ? `${API_BASE}?kind=chat` : API_BASE;
     const res = await fetch(url, { method: "GET" });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, data: null, error: `${res.status} ${body.slice(0, 120)}` };
+    }
     const json = (await res.json()) as { data: T | null };
-    return json.data ?? null;
-  } catch {
-    return null;
+    return { ok: true, data: json.data ?? null };
+  } catch (err) {
+    return { ok: false, data: null, error: err instanceof Error ? err.message : "Network error" };
   }
 }
 

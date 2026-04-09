@@ -13,6 +13,7 @@ import {
   defaultSelection,
   emptyCountryProfile,
   emptyFruitProfile,
+  factorDefinitions,
   factorLabels,
   factors,
   fruits as initialFruits,
@@ -36,6 +37,7 @@ import {
   type FruitCostEntry,
   type RegionalFlavorEntry,
 } from "./data/regionalData";
+import { countryDataCompleteness } from "./utils/dataCompleteness";
 import { exportAsCSV, exportAsJSON } from "./utils/exportResults";
 import { loadState, saveState } from "./utils/persistence";
 import type { Scenario } from "./utils/scenarios";
@@ -63,8 +65,9 @@ function Shelf({
       className="group rounded-3xl border border-white/70 bg-white/80 shadow-panel backdrop-blur open:bg-white"
       {...(defaultOpen ? { open: true } : {})}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-3xl px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40">
         <svg
+          aria-hidden="true"
           className="h-4 w-4 shrink-0 text-stone transition-transform group-open:rotate-90"
           fill="none"
           viewBox="0 0 24 24"
@@ -116,10 +119,11 @@ export default function App() {
   // Cloud sync — load workspace + chat history once on mount
   const [initialChat, setInitialChat] = useState<unknown[] | undefined>(undefined);
   const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [cloudWorkspace, cloudChat] = await Promise.all([
+      const [workspaceRes, chatRes] = await Promise.all([
         loadCloudState<{
           countries?: CountryOption[]; fruits?: FruitOption[]; bases?: GelatoBase[]; presets?: StrategyPreset[];
           countryId?: string; baseId?: string; presetId?: string; pricePoint?: number; weights?: typeof weights;
@@ -131,6 +135,10 @@ export default function App() {
         loadCloudState<unknown[]>("chat"),
       ]);
       if (cancelled) return;
+      if (!workspaceRes.ok || !chatRes.ok) {
+        setCloudError(workspaceRes.error ?? chatRes.error ?? "Cloud sync unavailable");
+      }
+      const cloudWorkspace = workspaceRes.data;
       if (cloudWorkspace) {
         if (cloudWorkspace.countries) setCountries(cloudWorkspace.countries);
         if (cloudWorkspace.fruits) setFruits(cloudWorkspace.fruits);
@@ -146,7 +154,7 @@ export default function App() {
         if (typeof cloudWorkspace.pricePoint === "number") setPricePoint(cloudWorkspace.pricePoint);
         if (cloudWorkspace.weights) setWeights(cloudWorkspace.weights);
       }
-      setInitialChat(Array.isArray(cloudChat) ? cloudChat : []);
+      setInitialChat(Array.isArray(chatRes.data) ? chatRes.data : []);
       setCloudLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -194,6 +202,23 @@ export default function App() {
   const selectedBase = bases.find((b) => b.id === baseId) ?? bases[0];
   const safePreset = selectedPreset ?? presets[0];
   const pricing = pricingData[countryId];
+
+  // Default weights for the currently-selected strategy, used to drive the
+  // "Reset" button and the "modified" badge in the Tune shelf.
+  const defaultWeights = useMemo(
+    () => (safePreset ? getPresetWeights(safePreset) : weights),
+    [safePreset, weights],
+  );
+  const weightsModified = useMemo(
+    () => factors.some((f) => Math.abs(weights[f] - defaultWeights[f]) > 0.001),
+    [weights, defaultWeights],
+  );
+
+  // Data completeness — surfaces the correctness gap where a country added
+  // without flavor/cost data produces meaningless rankings.
+  const completeness = selectedCountry
+    ? countryDataCompleteness(selectedCountry.id, fruits, flavorData, fruitCostData)
+    : null;
 
   const dataOverrides: DataOverrides = {
     pricingByCountry: pricingData,
@@ -251,14 +276,54 @@ export default function App() {
               Which fruit gelato concept will sell best — market by market.
             </p>
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setActiveTab("analyze")} className={tabClass("analyze")}>Analyze</button>
-            <button type="button" onClick={() => setActiveTab("data")} className={tabClass("data")}>Data</button>
+          <div className="flex gap-2" role="tablist" aria-label="Main navigation">
+            <button type="button" role="tab" aria-selected={activeTab === "analyze"} onClick={() => setActiveTab("analyze")} className={tabClass("analyze")}>Analyze</button>
+            <button type="button" role="tab" aria-selected={activeTab === "data"} onClick={() => setActiveTab("data")} className={tabClass("data")}>Data</button>
           </div>
         </header>
 
+        {/* Cloud load state — skeleton, then error surface if sync failed */}
+        {!cloudLoaded && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-6 space-y-3"
+          >
+            <div className="h-24 animate-pulse rounded-3xl bg-white/60" />
+            <div className="h-64 animate-pulse rounded-4xl bg-white/60" />
+            <span className="sr-only">Loading workspace from cloud…</span>
+          </div>
+        )}
+        {cloudLoaded && cloudError && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            <svg aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75l-7-12a2 2 0 00-3.4 0l-7 12A2 2 0 005 19z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium">Cloud sync unavailable</p>
+              <p className="mt-0.5 text-xs text-amber-800/80">
+                Working from local data. Changes won't persist across devices until the connection recovers.
+                <span className="ml-1 text-amber-800/60">({cloudError})</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCloudError(null)}
+              aria-label="Dismiss cloud sync warning"
+              className="rounded-full p-1 text-amber-700/70 transition hover:bg-amber-100 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            >
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* ═══════════ ANALYZE TAB ═══════════ */}
-        {activeTab === "analyze" && selectedCountry && selectedBase && safePreset ? (
+        {cloudLoaded && activeTab === "analyze" && selectedCountry && selectedBase && safePreset ? (
           <div className="space-y-5">
             {/* 1. Pick a market */}
             <CountrySelector
@@ -267,6 +332,31 @@ export default function App() {
               onChange={setCountryId}
               pricingByCountry={pricingData}
             />
+
+            {/* Correctness warning — only if the selected country has enough
+                blank rows that the ranking can't mean much. */}
+            {completeness && completeness.incomplete && (
+              <div
+                role="alert"
+                className="flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              >
+                <svg aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75l-7-12a2 2 0 00-3.4 0l-7 12A2 2 0 005 19z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="font-medium">{selectedCountry.label} is missing local data</p>
+                  <p className="mt-0.5 text-xs text-amber-800/80">
+                    Only {completeness.flavorFilled}/{completeness.total} fruits have a flavor familiarity set and{" "}
+                    {completeness.costFilled}/{completeness.total} have sourcing cost filled. The ranking below is
+                    approximate until you add local context.
+                  </p>
+                  <p className="mt-1.5 text-xs text-amber-800/80">
+                    <span className="font-medium">Fix it fast:</span> open <b>Ask AI</b> bottom-right and say{" "}
+                    <i>"fill in the flavor and sourcing data for {selectedCountry.label}"</i>, or edit the tables manually in the Data tab.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 2. The answer — hero card with "why this works" */}
             <ResultsPanel
@@ -279,15 +369,19 @@ export default function App() {
             {/* 3. Optional shelves — open only if the user wants detail */}
             <Shelf
               label="Tune the model"
-              summary={`${selectedBase.label} · ${safePreset.label} · $${pricePoint.toFixed(2)}`}
+              summary={`${selectedBase.label} · ${safePreset.label} · $${pricePoint.toFixed(2)}${weightsModified ? " · modified" : ""}`}
             >
+              <p className="mb-4 text-xs text-stone">
+                Swap the product base, pick a scoring strategy, and set the shelf price you're testing.
+              </p>
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-stone">Product base</span>
                   <select
                     value={baseId}
                     onChange={(e) => setBaseId(e.target.value)}
-                    className="w-full rounded-xl border border-sand bg-bone px-3 py-2.5 text-sm text-ink outline-none transition focus:border-[#2D6A4F]"
+                    aria-label="Product base"
+                    className="w-full rounded-xl border border-sand bg-bone px-3 py-2.5 text-sm text-ink outline-none transition focus:border-[#2D6A4F] focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
                   >
                     {bases.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
                   </select>
@@ -297,10 +391,14 @@ export default function App() {
                   <select
                     value={presetId}
                     onChange={(e) => setPresetId(e.target.value)}
-                    className="w-full rounded-xl border border-sand bg-bone px-3 py-2.5 text-sm text-ink outline-none transition focus:border-[#2D6A4F]"
+                    aria-label="Scoring strategy"
+                    className="w-full rounded-xl border border-sand bg-bone px-3 py-2.5 text-sm text-ink outline-none transition focus:border-[#2D6A4F] focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
                   >
                     {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                   </select>
+                  {safePreset?.summary && (
+                    <p className="text-[11px] leading-snug text-stone">{safePreset.summary}</p>
+                  )}
                 </label>
                 <div className="space-y-1.5">
                   <span className="text-xs font-medium text-stone">Price point</span>
@@ -309,12 +407,13 @@ export default function App() {
                       type="range" min="1" max="20" step="0.25"
                       value={pricePoint}
                       onChange={(e) => setPricePoint(Number(e.target.value))}
-                      className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F]"
+                      aria-label={`Price point, currently ${pricePoint.toFixed(2)} dollars`}
+                      className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
                     />
                     <span className="w-14 text-right text-sm font-semibold text-ink">${pricePoint.toFixed(2)}</span>
                   </div>
                   {pricing && (
-                    <p className="text-[10px] text-stone">
+                    <p className="text-[11px] text-stone">
                       Avg ${pricing.avgMarketPrice.toFixed(2)} · Sensitivity {pricing.priceSensitivity}/5
                     </p>
                   )}
@@ -322,24 +421,58 @@ export default function App() {
               </div>
 
               <div className="mt-5 border-t border-sand/70 pt-4">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone">
-                  Factor weights
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {factors.map((factor) => (
-                    <label key={factor} className="block">
-                      <div className="mb-1 flex items-center justify-between text-[11px]">
-                        <span className="text-ink">{factorLabels[factor]}</span>
-                        <span className="font-medium text-stone">{weights[factor].toFixed(1)}x</span>
-                      </div>
-                      <input
-                        type="range" min="0.4" max="2" step="0.1"
-                        value={weights[factor]}
-                        onChange={(e) => setWeights((w) => ({ ...w, [factor]: Number(e.target.value) }))}
-                        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F]"
-                      />
-                    </label>
-                  ))}
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-stone">
+                      Factor weights
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-stone/80">
+                      Each factor's weight multiplies how much it counts toward the final score. Higher weight = that
+                      trait matters more when picking the winner. Defaults come from the <b>{safePreset.label}</b> strategy.
+                    </p>
+                  </div>
+                  {weightsModified && (
+                    <button
+                      type="button"
+                      onClick={() => setWeights(defaultWeights)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#2D6A4F]/30 bg-white px-3 py-1.5 text-[11px] font-medium text-[#2D6A4F] transition hover:bg-[#2D6A4F]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
+                    >
+                      <svg aria-hidden="true" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582M20 20v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15m-10.418-7a8.003 8.003 0 0115.357 2M4.582 9H9" />
+                      </svg>
+                      Reset to {safePreset.label}
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  {factors.map((factor) => {
+                    const isModified = Math.abs(weights[factor] - defaultWeights[factor]) > 0.001;
+                    return (
+                      <label key={factor} className="block">
+                        <div className="mb-1 flex items-center justify-between text-[11px]">
+                          <span className="flex items-center gap-1 text-ink">
+                            {factorLabels[factor]}
+                            {isModified && (
+                              <span
+                                aria-label="Modified from strategy default"
+                                title="Modified from strategy default"
+                                className="inline-block h-1.5 w-1.5 rounded-full bg-[#2D6A4F]"
+                              />
+                            )}
+                          </span>
+                          <span className="font-medium tabular-nums text-stone">{weights[factor].toFixed(1)}×</span>
+                        </div>
+                        <input
+                          type="range" min="0.4" max="2" step="0.1"
+                          value={weights[factor]}
+                          onChange={(e) => setWeights((w) => ({ ...w, [factor]: Number(e.target.value) }))}
+                          aria-label={`${factorLabels[factor]} weight, currently ${weights[factor].toFixed(1)} times. ${factorDefinitions[factor]}`}
+                          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
+                        />
+                        <p className="mt-1 text-[10px] leading-snug text-stone/80">{factorDefinitions[factor]}</p>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </Shelf>
@@ -393,6 +526,11 @@ export default function App() {
                   for (const fr of fruits) updated[fr.id] = { ...updated[fr.id], [id]: { costIndex: 2.5, supplyReliability: 3, sourceNote: "" } };
                   return updated;
                 });
+                // Jump to Analyze with the new country selected so the user
+                // immediately sees the "missing local data" warning instead of
+                // silently getting garbage rankings.
+                setCountryId(id);
+                setActiveTab("analyze");
               }}
               onAddFruit={() => {
                 const id = `fruit-${Date.now()}`;
