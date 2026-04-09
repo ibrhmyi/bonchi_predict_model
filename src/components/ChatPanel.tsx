@@ -107,7 +107,7 @@ export function ChatPanel({ onToolCall, initialMessages, onMessagesChange }: Cha
             </div>
             <div>
               <h3 className="font-serif text-base text-ink">Bonchi Assistant</h3>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-stone">Gemini 2.5 Flash</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-stone">Gemini 2.0 Flash</p>
             </div>
           </div>
           <button
