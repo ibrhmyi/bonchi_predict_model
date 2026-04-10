@@ -1,12 +1,9 @@
 import { useCallback, useRef, useEffect } from "react";
 import {
-  emptyCountryProfile,
-  emptyFruitProfile,
+  buildEmptyProfile,
   type CountryOption,
-  type Factor,
+  type FactorDef,
   type FactorMap,
-  type FruitFactor,
-  type FruitFactorMap,
   type FruitOption,
   type GelatoBase,
   type StrategyPreset,
@@ -21,6 +18,7 @@ type State = {
   fruits: FruitOption[];
   bases: GelatoBase[];
   presets: StrategyPreset[];
+  factorDefs: FactorDef[];
   pricingData: Record<string, PricingProfile>;
   flavorData: Record<string, Record<string, RegionalFlavorEntry>>;
   productionCostData: Record<string, number>;
@@ -49,7 +47,6 @@ const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `id-${Date.now()}`;
 
 export function useToolHandlers(state: State, setters: Setters) {
-  // Keep latest state in a ref so the handler closure is stable
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -77,10 +74,12 @@ export function useToolHandlers(state: State, setters: Setters) {
                   fruits: s.fruits,
                   weights: s.weights,
                   pricePoint: activePricePoint,
+                  factorDefs: s.factorDefs,
                   data: dataOverrides,
                 }).slice(0, 5)
               : [];
           return {
+            factorDefs: s.factorDefs.map((fd) => ({ id: fd.id, label: fd.label })),
             countries: s.countries.map((c) => ({ id: c.id, label: c.label, profile: c.profile })),
             fruits: s.fruits.map((f) => ({ id: f.id, label: f.label, profile: f.profile })),
             bases: s.bases.map((b) => ({ id: b.id, label: b.label })),
@@ -108,10 +107,9 @@ export function useToolHandlers(state: State, setters: Setters) {
         case "addCountry": {
           const label = String(input.label ?? "New Country");
           const id = `c-${slugify(label)}-${Date.now().toString(36)}`;
-          const profile: FactorMap = {
-            ...emptyCountryProfile(),
-            ...((input.profile as Partial<FactorMap>) ?? {}),
-          };
+          const emptyProfile = buildEmptyProfile(s.factorDefs);
+          const inputProfile = (input.profile as Record<string, number> | undefined) ?? {};
+          const profile: FactorMap = { ...emptyProfile, ...inputProfile };
           setters.setCountries((prev) => [...prev, { id, label, profile }]);
           setters.setPricingData((prev) => ({
             ...prev,
@@ -121,7 +119,6 @@ export function useToolHandlers(state: State, setters: Setters) {
             },
           }));
 
-          // Build flavor lookup from LLM input, fall back to "low" for missing fruits
           type FlavorInput = { fruitId: string; familiarity?: FlavorFamiliarity };
           const flavorInputs = Array.isArray(input.flavorFamiliarity)
             ? (input.flavorFamiliarity as FlavorInput[])
@@ -151,10 +148,9 @@ export function useToolHandlers(state: State, setters: Setters) {
         case "addFruit": {
           const label = String(input.label ?? "New Fruit");
           const id = `f-${slugify(label)}-${Date.now().toString(36)}`;
-          const profile: FruitFactorMap = {
-            ...emptyFruitProfile(),
-            ...((input.profile as Partial<FruitFactorMap>) ?? {}),
-          };
+          const emptyProfile = buildEmptyProfile(s.factorDefs);
+          const inputProfile = (input.profile as Record<string, number> | undefined) ?? {};
+          const profile: FactorMap = { ...emptyProfile, ...inputProfile };
           setters.setFruits((prev) => [...prev, { id, label, profile }]);
           setters.setFlavorData((prev) => {
             const next = { ...prev };
@@ -249,6 +245,7 @@ export function useToolHandlers(state: State, setters: Setters) {
             fruits: s.fruits,
             weights: s.weights,
             pricePoint: activePricePoint,
+            factorDefs: s.factorDefs,
             data: dataOverrides,
           }).slice(0, limit);
           return {
@@ -281,6 +278,3 @@ export function useToolHandlers(state: State, setters: Setters) {
     [setters],
   );
 }
-
-// Re-export types so consumers don't need to redeclare
-export type { Factor, FruitFactor };

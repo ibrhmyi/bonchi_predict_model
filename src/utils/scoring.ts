@@ -1,11 +1,9 @@
 import {
-  factorDefinitions,
-  factorLabels,
-  factors,
+  defaultFactorDefs,
+  getFactorLabel,
   type CountryOption,
-  type Factor,
+  type FactorDef,
   type FactorMap,
-  type FruitFactor,
   type FruitOption,
   type GelatoBase,
   type StrategyPreset,
@@ -31,7 +29,7 @@ export type DataOverrides = {
 };
 
 export type FactorDetail = {
-  factor: Factor;
+  factor: string;
   countryValue: number;
   conceptValue: number;
   match: number;
@@ -60,7 +58,7 @@ export type RankedConcept = {
 const clampFactor = (value: number) => Math.min(5, Math.max(1, value));
 const roundToTenth = (value: number) => Math.round(value * 10) / 10;
 
-const fruitWeightedFactor = (
+const blendedValue = (
   baseValue: number,
   fruitValue: number,
   baseWeight: number,
@@ -70,18 +68,27 @@ const fruitWeightedFactor = (
 export const buildConceptProfile = (
   base: GelatoBase,
   fruit: FruitOption,
+  factorDefs: FactorDef[] = defaultFactorDefs,
   config: ScoringConfig = defaultScoringConfig,
 ): FactorMap => {
   const { standardBaseWeight: sB, standardFruitWeight: sF, culturalBaseWeight: cB, culturalFruitWeight: cF } = config.blending;
-  return {
-    cream: base.profile.cream,
-    fruit: fruitWeightedFactor(base.profile.fruit, fruit.profile.fruit, sB, sF),
-    refreshing: fruitWeightedFactor(base.profile.refreshing, fruit.profile.refreshing, sB, sF),
-    health: fruitWeightedFactor(base.profile.health, fruit.profile.health, sB, sF),
-    premium: fruitWeightedFactor(base.profile.premium, fruit.profile.premium, sB, sF),
-    culturalFit: fruitWeightedFactor(base.profile.culturalFit, fruit.profile.culturalFit, cB, cF),
-    exoticAppetite: fruitWeightedFactor(base.profile.exoticAppetite, fruit.profile.exoticAppetite, cB, cF),
-  };
+  const profile: FactorMap = {};
+
+  for (const fd of factorDefs) {
+    const bv = base.profile[fd.id] ?? 3;
+    const fv = fruit.profile[fd.id] ?? 3;
+    const mode = fd.blendMode ?? "standard";
+
+    if (mode === "base-only") {
+      profile[fd.id] = bv;
+    } else if (mode === "cultural") {
+      profile[fd.id] = blendedValue(bv, fv, cB, cF);
+    } else {
+      profile[fd.id] = blendedValue(bv, fv, sB, sF);
+    }
+  }
+
+  return profile;
 };
 
 function generateDataDrivenInsights(
@@ -95,6 +102,7 @@ function generateDataDrivenInsights(
   regionalBonus: number,
   factorDetails: FactorDetail[],
   pricing: PricingProfile | undefined,
+  factorDefs: FactorDef[],
   maxInsights = 4,
 ): string[] {
   const insights: string[] = [];
@@ -124,7 +132,7 @@ function generateDataDrivenInsights(
 
   const topFactor = [...factorDetails].sort((a, b) => b.weightedMatch - a.weightedMatch)[0];
   if (topFactor) {
-    const factorName = factorLabels[topFactor.factor].toLowerCase();
+    const factorName = getFactorLabel(factorDefs, topFactor.factor).toLowerCase();
     if (topFactor.match >= 4) {
       insights.push(
         `${base.label} format aligns strongly with ${country.label}'s ${factorName} expectations.`,
@@ -132,7 +140,7 @@ function generateDataDrivenInsights(
     }
   }
 
-  if ((base.id === "sorbet" || base.id === "vegan-gelato") && country.profile.health >= 4) {
+  if ((base.id === "sorbet" || base.id === "vegan-gelato") && (country.profile.health ?? 0) >= 4) {
     insights.push(
       `${base.label} avoids dairy, fitting health-conscious demand in ${country.label}.`,
     );
@@ -147,14 +155,16 @@ export const rankFruitConcepts = ({
   fruits,
   weights,
   pricePoint,
+  factorDefs = defaultFactorDefs,
   config = defaultScoringConfig,
   data,
 }: {
   country: CountryOption;
   base: GelatoBase;
   fruits: FruitOption[];
-  weights: StrategyPreset["weights"];
+  weights: FactorMap;
   pricePoint?: number;
+  factorDefs?: FactorDef[];
   config?: ScoringConfig;
   data?: DataOverrides;
 }): RankedConcept[] => {
@@ -162,8 +172,10 @@ export const rankFruitConcepts = ({
   const flavorMap = data?.regionalFlavorBonus ?? defaultRegionalFlavorBonus;
   const prodCostMap = data?.baseProductionCost ?? defaultBaseProductionCost;
 
-  const maxPossibleScore = factors.reduce(
-    (total, factor) => total + 5 * weights[factor],
+  const factorIds = factorDefs.map((fd) => fd.id);
+
+  const maxPossibleScore = factorIds.reduce(
+    (total, fId) => total + 5 * (weights[fId] ?? 1),
     0,
   );
 
@@ -171,15 +183,15 @@ export const rankFruitConcepts = ({
 
   return fruits
     .map((fruit) => {
-      const conceptProfile = buildConceptProfile(base, fruit, config);
-      const factorDetails = factors.map((factor) => {
-        const countryValue = country.profile[factor];
-        const conceptValue = conceptProfile[factor];
+      const conceptProfile = buildConceptProfile(base, fruit, factorDefs, config);
+      const factorDetails: FactorDetail[] = factorIds.map((fId) => {
+        const countryValue = country.profile[fId] ?? 3;
+        const conceptValue = conceptProfile[fId] ?? 3;
         const match = 5 - Math.abs(countryValue - conceptValue);
-        const weight = weights[factor];
+        const weight = weights[fId] ?? 1;
 
         return {
-          factor,
+          factor: fId,
           countryValue,
           conceptValue,
           match,
@@ -223,7 +235,7 @@ export const rankFruitConcepts = ({
         country, base, fruit,
         flavorData ? { familiarity: flavorData.familiarity } : null,
         priceFitValue, estimatedMargin, pricePoint,
-        regionalBonus, factorDetails, pricing,
+        regionalBonus, factorDetails, pricing, factorDefs,
         config.maxInsights,
       );
 
@@ -240,15 +252,16 @@ export const rankFruitConcepts = ({
 };
 
 export const scoreSingleCombination = ({
-  country, base, fruit, weights, data,
+  country, base, fruit, weights, factorDefs, data,
 }: {
   country: CountryOption;
   base: GelatoBase;
   fruit: FruitOption;
-  weights: StrategyPreset["weights"];
+  weights: FactorMap;
+  factorDefs?: FactorDef[];
   data?: DataOverrides;
 }): number => {
-  const results = rankFruitConcepts({ country, base, fruits: [fruit], weights, data });
+  const results = rankFruitConcepts({ country, base, fruits: [fruit], weights, factorDefs, data });
   return results[0]?.score ?? 0;
 };
 
@@ -265,12 +278,13 @@ export type BenchmarkEntry = {
 };
 
 export const generateBenchmarkMatrix = ({
-  countries, bases, fruits, weights, data,
+  countries, bases, fruits, weights, factorDefs, data,
 }: {
   countries: CountryOption[];
   bases: GelatoBase[];
   fruits: FruitOption[];
-  weights: StrategyPreset["weights"];
+  weights: FactorMap;
+  factorDefs?: FactorDef[];
   data?: DataOverrides;
 }): BenchmarkEntry[] => {
   const entries: BenchmarkEntry[] = [];
@@ -279,7 +293,7 @@ export const generateBenchmarkMatrix = ({
     for (const fruit of fruits) {
       const scores: Record<string, number> = {};
       for (const country of countries) {
-        scores[country.id] = scoreSingleCombination({ country, base, fruit, weights, data });
+        scores[country.id] = scoreSingleCombination({ country, base, fruit, weights, factorDefs, data });
       }
 
       const scoreValues = Object.values(scores);
@@ -300,22 +314,7 @@ export const generateBenchmarkMatrix = ({
   return entries.sort((a, b) => b.max - a.max);
 };
 
-export const getPresetWeights = (preset: StrategyPreset): FactorMap => ({
-  cream: preset.weights.cream,
-  fruit: preset.weights.fruit,
-  refreshing: preset.weights.refreshing,
-  health: preset.weights.health,
-  premium: preset.weights.premium,
-  culturalFit: preset.weights.culturalFit,
-  exoticAppetite: preset.weights.exoticAppetite,
-});
+export const getPresetWeights = (preset: StrategyPreset): FactorMap => ({ ...preset.weights });
 
-export const getDominantFactors = (weights: FactorMap): Factor[] =>
-  factors.slice().sort((left, right) => weights[right] - weights[left]).slice(0, 2);
-
-export const fruitFactors: FruitFactor[] = [
-  "fruit", "refreshing", "health", "premium", "culturalFit", "exoticAppetite",
-];
-
-export const getFactorLabel = (factor: Factor) => factorLabels[factor];
-export const getFactorDefinition = (factor: Factor) => factorDefinitions[factor];
+export const getDominantFactors = (weights: FactorMap, factorDefs: FactorDef[] = defaultFactorDefs): string[] =>
+  factorDefs.map((fd) => fd.id).sort((a, b) => (weights[b] ?? 1) - (weights[a] ?? 1)).slice(0, 2);

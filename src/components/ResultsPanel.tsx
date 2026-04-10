@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { factorLabels, type CountryOption, type GelatoBase, type StrategyPreset } from "../data/marketFit";
+import { getFactorLabel, type CountryOption, type FactorDef, type GelatoBase, type StrategyPreset } from "../data/marketFit";
 import { confidenceLabels, dataConfidence } from "../data/methodology";
 import { getFlavorFamiliarityLabel, getMatchQualityLabel } from "../data/regionalData";
 import { getPriceImpact } from "../data/pricing";
@@ -12,6 +12,7 @@ type ResultsPanelProps = {
   base: GelatoBase;
   preset: StrategyPreset;
   ranking: RankedConcept[];
+  factorDefs: FactorDef[];
 };
 
 const familiarityBadgeColors = {
@@ -83,6 +84,7 @@ export function ResultsPanel({
   base,
   preset: _preset,
   ranking,
+  factorDefs,
 }: ResultsPanelProps) {
   const topPick = ranking[0];
   const [showAllFactors, setShowAllFactors] = useState(false);
@@ -204,7 +206,7 @@ export function ResultsPanel({
               {displayFactors.map((detail) => (
                 <FactorBar
                   key={detail.factor}
-                  label={factorLabels[detail.factor]}
+                  label={getFactorLabel(factorDefs, detail.factor)}
                   score={detail.match}
                 />
               ))}

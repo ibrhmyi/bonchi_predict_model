@@ -4,15 +4,16 @@
  * Saves and restores the full app state so edits survive page refreshes.
  */
 
-import type { CountryOption, FruitOption, GelatoBase, StrategyPreset, FactorMap } from "../data/marketFit";
+import type { CountryOption, FactorDef, FruitOption, GelatoBase, StrategyPreset, FactorMap } from "../data/marketFit";
 import type { PricingProfile } from "../data/pricing";
 import type { RegionalFlavorEntry } from "../data/regionalData";
 
 const STORAGE_KEY = "bonchi-market-fit";
-const VERSION = 3;
+const VERSION = 4;
 
 export interface PersistedState {
   version: number;
+  factorDefs?: FactorDef[];
   countries: CountryOption[];
   fruits: FruitOption[];
   bases: GelatoBase[];
@@ -42,8 +43,8 @@ export function loadState(): Omit<PersistedState, "version"> | null {
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as PersistedState & { pricePoint?: number };
-    // Accept version 1, 2 or 3
-    if (![1, 2, 3].includes(parsed.version)) return null;
+    // Accept version 1, 2, 3, or 4
+    if (![1, 2, 3, 4].includes(parsed.version)) return null;
 
     if (
       !Array.isArray(parsed.countries) ||
@@ -94,6 +95,7 @@ export function loadState(): Omit<PersistedState, "version"> | null {
     }
 
     return {
+      factorDefs: parsed.factorDefs,
       countries: parsed.countries,
       fruits: parsed.fruits,
       bases: parsed.bases,

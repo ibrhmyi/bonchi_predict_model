@@ -1,12 +1,8 @@
 import { useState, type ReactNode } from "react";
 import {
-  factorDefinitions,
-  factorLabels,
-  factors,
   type CountryOption,
-  type Factor,
+  type FactorDef,
   type FactorMap,
-  type FruitFactor,
   type FruitOption,
   type GelatoBase,
   type StrategyPreset,
@@ -14,7 +10,7 @@ import {
 import type { PricingProfile } from "../data/pricing";
 import type { FlavorFamiliarity, RegionalFlavorEntry } from "../data/regionalData";
 import { numToVerbal, verbalLabels, verbalToNum, type VerbalLevel } from "../data/regionalData";
-import { fruitFactors, type DataOverrides } from "../utils/scoring";
+import type { DataOverrides } from "../utils/scoring";
 import { BenchmarkMatrix } from "./BenchmarkMatrix";
 
 type ModelLibraryProps = {
@@ -22,6 +18,7 @@ type ModelLibraryProps = {
   fruits: FruitOption[];
   bases: GelatoBase[];
   presets: StrategyPreset[];
+  factorDefs: FactorDef[];
   weights: FactorMap;
   pricingByCountry: Record<string, PricingProfile>;
   flavorData: Record<string, Record<string, RegionalFlavorEntry>>;
@@ -35,14 +32,18 @@ type ModelLibraryProps = {
   onDeleteBase: (id: string) => void;
   onAddPreset: () => void;
   onDeletePreset: (id: string) => void;
+  onAddFactor: () => void;
+  onDeleteFactor: (id: string) => void;
+  onRenameFactor: (id: string, label: string) => void;
+  onFactorDefinitionChange: (id: string, definition: string) => void;
   onCountryLabelChange: (id: string, label: string) => void;
-  onCountryFactorChange: (id: string, factor: Factor, value: number) => void;
+  onCountryFactorChange: (id: string, factor: string, value: number) => void;
   onFruitLabelChange: (id: string, label: string) => void;
-  onFruitFactorChange: (id: string, factor: FruitFactor, value: number) => void;
+  onFruitFactorChange: (id: string, factor: string, value: number) => void;
   onBaseLabelChange: (id: string, label: string) => void;
-  onBaseFactorChange: (id: string, factor: Factor, value: number) => void;
+  onBaseFactorChange: (id: string, factor: string, value: number) => void;
   onPresetLabelChange: (id: string, label: string) => void;
-  onPresetFactorChange: (id: string, factor: Factor, value: number) => void;
+  onPresetFactorChange: (id: string, factor: string, value: number) => void;
   onPresetSummaryChange: (id: string, summary: string) => void;
   onPricingChange: (countryId: string, field: keyof PricingProfile, value: number | string) => void;
   onFlavorBonusChange: (countryId: string, fruitId: string, field: keyof RegionalFlavorEntry, value: string) => void;
@@ -97,12 +98,20 @@ function TextInput({ value, onChange, className = "w-40" }: {
   );
 }
 
-function FactorHeader({ factor }: { factor: Factor }) {
+function FactorHeader({ factorDef, onDelete, canDelete }: { factorDef: FactorDef; onDelete?: () => void; canDelete?: boolean }) {
   return (
     <th className="group relative px-3 py-2">
-      <span className="cursor-help border-b border-dashed border-stone/40">{factorLabels[factor]}</span>
+      <span className="cursor-help border-b border-dashed border-stone/40">{factorDef.label}</span>
+      {canDelete && onDelete && (
+        <button type="button" onClick={onDelete} title={`Remove ${factorDef.label} factor`}
+          className="ml-1 inline-block rounded-full p-0.5 text-stone/30 transition hover:text-red-500">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
       <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 w-48 -translate-x-1/2 rounded-xl border border-sand bg-white p-3 text-xs font-normal normal-case tracking-normal text-stone opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-        <span className="font-medium text-ink">{factorLabels[factor]}</span>: {factorDefinitions[factor]}
+        <span className="font-medium text-ink">{factorDef.label}</span>: {factorDef.definition}
       </div>
     </th>
   );
@@ -135,9 +144,10 @@ function Section({ title, subtitle, action, children, defaultOpen = true }: {
 
 export function ModelLibrary(props: ModelLibraryProps) {
   const {
-    countries, fruits, bases, presets, weights, data,
+    countries, fruits, bases, presets, factorDefs, weights, data,
     pricingByCountry, flavorData, productionCostData,
     onAddCountry, onDeleteCountry, onAddFruit, onDeleteFruit, onAddBase, onDeleteBase, onAddPreset, onDeletePreset,
+    onAddFactor, onDeleteFactor, onRenameFactor, onFactorDefinitionChange,
     onCountryLabelChange, onCountryFactorChange,
     onFruitLabelChange, onFruitFactorChange,
     onBaseLabelChange, onBaseFactorChange,
@@ -145,37 +155,84 @@ export function ModelLibrary(props: ModelLibraryProps) {
     onPricingChange, onFlavorBonusChange, onProductionCostChange,
   } = props;
 
+  const canDeleteFactor = factorDefs.length > 1;
+
   return (
     <div className="space-y-4">
       {/* Benchmark Matrix */}
-      <BenchmarkMatrix countries={countries} bases={bases} fruits={fruits} weights={weights} data={data} />
+      <BenchmarkMatrix countries={countries} bases={bases} fruits={fruits} weights={weights} factorDefs={factorDefs} data={data} />
 
-      {/* Market Profiles */}
-      <Section title="Market Profiles" subtitle="Country demand profiles (Very Low – Very High)"
+      {/* Factor Definitions */}
+      <Section title="Scoring Factors" subtitle="Add, remove, or rename the dimensions used to score concepts"
+        action={<button type="button" onClick={(e) => { e.stopPropagation(); onAddFactor(); }}
+          className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white">Add Factor</button>}>
+        <table className="min-w-full border-separate border-spacing-y-1.5">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
+              <th className="px-3 py-2">Label</th>
+              <th className="px-3 py-2">Definition</th>
+              <th className="px-3 py-2">Blend Mode</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {factorDefs.map((fd) => (
+              <tr key={fd.id} className="bg-[#fffdfa] text-sm">
+                <td className="px-3 py-2">
+                  <TextInput value={fd.label} onChange={(v) => onRenameFactor(fd.id, v)} className="w-36" />
+                </td>
+                <td className="px-3 py-2">
+                  <TextInput value={fd.definition} onChange={(v) => onFactorDefinitionChange(fd.id, v)} className="w-72" />
+                </td>
+                <td className="px-3 py-2 text-xs text-stone capitalize">{fd.blendMode ?? "standard"}</td>
+                <td className="px-3 py-2">
+                  {canDeleteFactor && <DeleteButton onClick={() => onDeleteFactor(fd.id)} />}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Section>
+
+      {/* Market Profiles — includes pricing columns */}
+      <Section title="Market Profiles" subtitle="Country demand profiles, pricing, and currency"
         action={<button type="button" onClick={(e) => { e.stopPropagation(); onAddCountry(); }}
           className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white">Add Country</button>}>
         <table className="min-w-full border-separate border-spacing-y-1.5">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Country</th>
-              {factors.map((f) => <FactorHeader key={f} factor={f} />)}
+              {factorDefs.map((fd) => (
+                <FactorHeader key={fd.id} factorDef={fd} />
+              ))}
+              <th className="px-3 py-2">Avg Price ($)</th>
+              <th className="px-3 py-2">Currency</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
-            {countries.map((c) => (
-              <tr key={c.id} className="bg-[#fffdfa] text-sm">
-                <td className="px-3 py-2"><TextInput value={c.label} onChange={(v) => onCountryLabelChange(c.id, v)} /></td>
-                {factors.map((f) => (
-                  <td key={f} className="px-3 py-2">
-                    <VerbalSelect value={c.profile[f]} onChange={(v) => onCountryFactorChange(c.id, f, v)} />
+            {countries.map((c) => {
+              const p = pricingByCountry[c.id];
+              return (
+                <tr key={c.id} className="bg-[#fffdfa] text-sm">
+                  <td className="px-3 py-2"><TextInput value={c.label} onChange={(v) => onCountryLabelChange(c.id, v)} /></td>
+                  {factorDefs.map((fd) => (
+                    <td key={fd.id} className="px-3 py-2">
+                      <VerbalSelect value={c.profile[fd.id] ?? 3} onChange={(v) => onCountryFactorChange(c.id, fd.id, v)} />
+                    </td>
+                  ))}
+                  <td className="px-3 py-2">
+                    <NumInput value={p?.avgMarketPrice ?? 4} onChange={(v) => onPricingChange(c.id, "avgMarketPrice", v)} min={0} max={50} step={0.5} />
                   </td>
-                ))}
-                <td className="px-3 py-2">
-                  {countries.length > 1 && <DeleteButton onClick={() => onDeleteCountry(c.id)} />}
-                </td>
-              </tr>
-            ))}
+                  <td className="px-3 py-2">
+                    <TextInput value={p?.currency ?? "USD"} onChange={(v) => onPricingChange(c.id, "currency", v)} className="w-20" />
+                  </td>
+                  <td className="px-3 py-2">
+                    {countries.length > 1 && <DeleteButton onClick={() => onDeleteCountry(c.id)} />}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Section>
@@ -188,7 +245,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Fruit</th>
-              {fruitFactors.map((f) => <FactorHeader key={f} factor={f} />)}
+              {factorDefs.map((fd) => (
+                <FactorHeader key={fd.id} factorDef={fd} />
+              ))}
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -196,9 +255,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
             {fruits.map((fr) => (
               <tr key={fr.id} className="bg-[#fffdfa] text-sm">
                 <td className="px-3 py-2"><TextInput value={fr.label} onChange={(v) => onFruitLabelChange(fr.id, v)} className="w-48" /></td>
-                {fruitFactors.map((f) => (
-                  <td key={f} className="px-3 py-2">
-                    <VerbalSelect value={fr.profile[f]} onChange={(v) => onFruitFactorChange(fr.id, f, v)} />
+                {factorDefs.map((fd) => (
+                  <td key={fd.id} className="px-3 py-2">
+                    <VerbalSelect value={fr.profile[fd.id] ?? 3} onChange={(v) => onFruitFactorChange(fr.id, fd.id, v)} />
                   </td>
                 ))}
                 <td className="px-3 py-2">
@@ -218,7 +277,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Base</th>
-              {factors.map((f) => <FactorHeader key={f} factor={f} />)}
+              {factorDefs.map((fd) => (
+                <FactorHeader key={fd.id} factorDef={fd} />
+              ))}
               <th className="px-3 py-2">Cost ($)</th>
               <th className="px-3 py-2" />
             </tr>
@@ -227,9 +288,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
             {bases.map((b) => (
               <tr key={b.id} className="bg-[#fffdfa] text-sm">
                 <td className="px-3 py-2"><TextInput value={b.label} onChange={(v) => onBaseLabelChange(b.id, v)} className="w-44" /></td>
-                {factors.map((f) => (
-                  <td key={f} className="px-3 py-2">
-                    <VerbalSelect value={b.profile[f]} onChange={(v) => onBaseFactorChange(b.id, f, v)} />
+                {factorDefs.map((fd) => (
+                  <td key={fd.id} className="px-3 py-2">
+                    <VerbalSelect value={b.profile[fd.id] ?? 3} onChange={(v) => onBaseFactorChange(b.id, fd.id, v)} />
                   </td>
                 ))}
                 <td className="px-3 py-2">
@@ -244,71 +305,39 @@ export function ModelLibrary(props: ModelLibraryProps) {
         </table>
       </Section>
 
-      {/* Pricing */}
-      <Section title="Market Pricing" subtitle="Average gelato price and currency per country" defaultOpen={false}>
-        <table className="min-w-full border-separate border-spacing-y-1.5">
+      {/* Regional Flavor Familiarity — matrix: countries as rows, fruits as columns */}
+      <Section title="Regional Flavor Familiarity" subtitle="How well each fruit is known in each country (rows = countries, columns = fruits)" defaultOpen={false}>
+        <table className="min-w-full border-separate border-spacing-y-1">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
-              <th className="px-3 py-2">Country</th>
-              <th className="px-3 py-2">Avg Price ($)</th>
-              <th className="px-3 py-2">Currency</th>
+            <tr className="text-left text-[10px] uppercase tracking-[0.2em] text-stone">
+              <th className="px-3 py-1.5">Country</th>
+              {fruits.map((fr) => (
+                <th key={fr.id} className="px-3 py-1.5 text-center">{fr.label}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {countries.map((c) => {
-              const p = pricingByCountry[c.id];
-              if (!p) return (
-                <tr key={c.id} className="bg-[#fffdfa] text-sm">
-                  <td className="px-3 py-2 text-ink">{c.label}</td>
-                  <td colSpan={2} className="px-3 py-2 text-xs text-stone">No pricing data — add via scoring</td>
-                </tr>
-              );
-              return (
-                <tr key={c.id} className="bg-[#fffdfa] text-sm">
-                  <td className="px-3 py-2 font-medium text-ink">{c.label}</td>
-                  <td className="px-3 py-2"><NumInput value={p.avgMarketPrice} onChange={(v) => onPricingChange(c.id, "avgMarketPrice", v)} min={0} max={50} step={0.5} /></td>
-                  <td className="px-3 py-2"><TextInput value={p.currency} onChange={(v) => onPricingChange(c.id, "currency", v)} className="w-20" /></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Section>
-
-      {/* Regional Flavor Familiarity */}
-      <Section title="Regional Flavor Familiarity" subtitle="How well each fruit is known in each country" defaultOpen={false}>
-        {countries.map((c) => (
-          <div key={c.id} className="mb-4 last:mb-0">
-            <h3 className="mb-2 text-sm font-semibold text-ink">{c.label}</h3>
-            <table className="min-w-full border-separate border-spacing-y-1">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-[0.2em] text-stone">
-                  <th className="px-3 py-1.5">Fruit</th>
-                  <th className="px-3 py-1.5">Familiarity</th>
-                </tr>
-              </thead>
-              <tbody>
+            {countries.map((c) => (
+              <tr key={c.id} className="bg-[#fffdfa] text-sm">
+                <td className="px-3 py-1.5 font-medium text-ink">{c.label}</td>
                 {fruits.map((fr) => {
                   const entry = flavorData[c.id]?.[fr.id] ?? { familiarity: "low" as FlavorFamiliarity };
                   return (
-                    <tr key={fr.id} className="bg-[#fffdfa] text-sm">
-                      <td className="px-3 py-1.5 text-ink">{fr.label}</td>
-                      <td className="px-3 py-1.5">
-                        <select value={entry.familiarity} onChange={(e) => onFlavorBonusChange(c.id, fr.id, "familiarity", e.target.value)}
-                          className="rounded-xl border border-sand bg-bone px-2 py-2 text-xs text-ink outline-none focus:border-[#2D6A4F]">
-                          <option value="high">High</option>
-                          <option value="medium">Medium</option>
-                          <option value="low">Low</option>
-                          <option value="novel">Novel</option>
-                        </select>
-                      </td>
-                    </tr>
+                    <td key={fr.id} className="px-3 py-1.5 text-center">
+                      <select value={entry.familiarity} onChange={(e) => onFlavorBonusChange(c.id, fr.id, "familiarity", e.target.value)}
+                        className="rounded-xl border border-sand bg-bone px-2 py-2 text-xs text-ink outline-none focus:border-[#2D6A4F]">
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                        <option value="novel">Novel</option>
+                      </select>
+                    </td>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Section>
 
       {/* Strategy Presets */}
@@ -319,7 +348,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Preset</th>
-              {factors.map((f) => <FactorHeader key={f} factor={f} />)}
+              {factorDefs.map((fd) => (
+                <FactorHeader key={fd.id} factorDef={fd} />
+              ))}
               <th className="px-3 py-2">Summary</th>
               <th className="px-3 py-2" />
             </tr>
@@ -328,9 +359,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
             {presets.map((p) => (
               <tr key={p.id} className="bg-[#fffdfa] text-sm">
                 <td className="px-3 py-2"><TextInput value={p.label} onChange={(v) => onPresetLabelChange(p.id, v)} className="w-36" /></td>
-                {factors.map((f) => (
-                  <td key={f} className="px-3 py-2">
-                    <NumInput value={p.weights[f]} onChange={(v) => onPresetFactorChange(p.id, f, v)} min={0.1} max={3} step={0.1} className="w-16" />
+                {factorDefs.map((fd) => (
+                  <td key={fd.id} className="px-3 py-2">
+                    <NumInput value={p.weights[fd.id] ?? 1} onChange={(v) => onPresetFactorChange(p.id, fd.id, v)} min={0.1} max={3} step={0.1} className="w-16" />
                   </td>
                 ))}
                 <td className="px-3 py-2"><TextInput value={p.summary} onChange={(v) => onPresetSummaryChange(p.id, v)} className="w-64" /></td>

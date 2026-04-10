@@ -90,24 +90,24 @@ export const dataConfidence: Record<string, { confidence: Confidence; source: st
 /** Model methodology — explains the scoring formula */
 export const methodologySections = [
   {
-    title: "7-Factor Scoring Model",
-    body: "Each fruit×base concept is scored against a country's market profile across 7 factors: Cream, Fruit, Refreshing, Health, Premium, Cultural Fit, and Exotic Appetite. Each factor is rated on a verbal scale (Very Low to Very High, mapped to 1–5 internally). Match score = 5 − |demand − supply|, then weighted by the active strategy.",
+    title: "Dynamic Factor Scoring",
+    body: "Each fruit×base concept is scored against a country's market profile across user-defined factors. Factors can be added, removed, or renamed in the Data tab. Each factor is rated on a verbal scale (Very Low to Very High, mapped to 1–5 internally). Match score per factor = 5 − |demand − supply|, then weighted by the active strategy. The default set includes Cream, Fruit, Refreshing, Health, Premium, Cultural Fit, and Exotic Appetite.",
   },
   {
     title: "Profile Blending",
-    body: "A concept profile blends the base and fruit profiles. Standard factors use 70% base / 30% fruit. Cultural factors (Cultural Fit, Exotic Appetite) use 60% base / 40% fruit, since fruit origin matters more for cultural positioning.",
+    body: "A concept profile blends the base and fruit profiles. Each factor has a blend mode: Standard (70% base / 30% fruit), Cultural (60% base / 40% fruit — fruit origin matters more for cultural positioning), or Base-only (100% base value, e.g. Cream). New factors default to Standard blending.",
   },
   {
     title: "Score Composition",
     body: "Final score = Base Score (0–100 from weighted factor matching) + Regional Flavor Bonus (0–8 pts based on local familiarity) + Price Fit Bonus (approx −5 to +5 pts based on how well the selling price matches the local market average). Clamped to 0–100.",
   },
   {
-    title: "Regional Flavor Bonus",
-    body: "Each fruit has a familiarity rating per country: High, Medium, Low, or Novel. The bonus is derived automatically — High familiarity (well-known local flavor) gives the strongest boost, Novel (Japanese exotic appeal) gives a moderate boost, Medium gives a small boost, and Low gives minimal bonus. Maximum contribution is 8 points.",
+    title: "Regional Flavor Familiarity",
+    body: "Each fruit has a familiarity rating per country: High, Medium, Low, or Novel. The bonus is derived automatically — High familiarity (well-known local flavor) gives the strongest boost, Novel (Japanese exotic appeal) gives a moderate boost, Medium gives a small boost, and Low gives minimal bonus. Maximum contribution is 8 points. Displayed as a matrix (countries × fruits) in the Data tab.",
   },
   {
     title: "Price Fit",
-    body: "Compares the selling price (set per product base) against the country's average market price. Prices within 80–120% of market average score highest (5/5). Prices above 150% or below 50% of market average are penalized most. The bonus/penalty scales linearly between these thresholds.",
+    body: "Compares the selling price (set per product base) against the country's average market price. Avg market price and currency are set per country in the Market Profiles table. Prices within 80–120% of market average score highest (5/5). Prices above 150% or below 50% are penalized most.",
   },
   {
     title: "Margin Estimate",

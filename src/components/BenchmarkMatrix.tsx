@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CountryOption, FruitOption, GelatoBase, FactorMap } from "../data/marketFit";
+import type { CountryOption, FactorDef, FruitOption, GelatoBase, FactorMap } from "../data/marketFit";
 import { generateBenchmarkMatrix, type DataOverrides } from "../utils/scoring";
 
 type BenchmarkMatrixProps = {
@@ -7,6 +7,7 @@ type BenchmarkMatrixProps = {
   bases: GelatoBase[];
   fruits: FruitOption[];
   weights: FactorMap;
+  factorDefs?: FactorDef[];
   data?: DataOverrides;
 };
 
@@ -16,12 +17,12 @@ function scoreColor(score: number): string {
   return "bg-red-100 text-red-800";
 }
 
-export function BenchmarkMatrix({ countries, bases, fruits, weights, data }: BenchmarkMatrixProps) {
+export function BenchmarkMatrix({ countries, bases, fruits, weights, factorDefs, data }: BenchmarkMatrixProps) {
   const [showMatrix, setShowMatrix] = useState(false);
   const [filterBase, setFilterBase] = useState<string>("all");
 
   const matrix = showMatrix
-    ? generateBenchmarkMatrix({ countries, bases, fruits, weights, data })
+    ? generateBenchmarkMatrix({ countries, bases, fruits, weights, factorDefs, data })
     : [];
 
   const filtered =

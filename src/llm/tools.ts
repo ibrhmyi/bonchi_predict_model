@@ -4,29 +4,14 @@ import { z } from "zod";
 // tools for Gemini, and the client (ChatPanel.tsx) to execute them against
 // React state.
 
-export const factorSchema = z.object({
-  cream: z.number().min(1).max(5).optional(),
-  fruit: z.number().min(1).max(5).optional(),
-  refreshing: z.number().min(1).max(5).optional(),
-  health: z.number().min(1).max(5).optional(),
-  premium: z.number().min(1).max(5).optional(),
-  culturalFit: z.number().min(1).max(5).optional(),
-  exoticAppetite: z.number().min(1).max(5).optional(),
-});
-
-export const fruitFactorSchema = z.object({
-  fruit: z.number().min(1).max(5).optional(),
-  refreshing: z.number().min(1).max(5).optional(),
-  health: z.number().min(1).max(5).optional(),
-  premium: z.number().min(1).max(5).optional(),
-  culturalFit: z.number().min(1).max(5).optional(),
-  exoticAppetite: z.number().min(1).max(5).optional(),
-});
+/** Dynamic factor profile — any string key mapped to 1-5 */
+export const factorSchema = z.record(z.string(), z.number().min(1).max(5)).optional()
+  .describe("Factor scores keyed by factor ID, each 1-5. Get valid factor IDs from getSnapshot.");
 
 export const toolSchemas = {
   getSnapshot: {
     description:
-      "Returns the current workspace data: countries, fruits, bases, strategies, pricing, and the current top-ranked concepts. Call this first when the user asks anything about the data or results.",
+      "Returns the current workspace data: countries, fruits, bases, strategies, pricing, factor definitions, and the current top-ranked concepts. Call this first when the user asks anything about the data or results.",
     inputSchema: z.object({}),
   },
 
@@ -35,9 +20,8 @@ export const toolSchemas = {
       "Add a new country/market AND populate its flavor familiarity in ONE call. Always include a full profile, realistic pricing, AND flavorFamiliarity for EVERY existing fruit (get fruit IDs from getSnapshot first). Do NOT leave flavor data blank — that produces meaningless rankings.",
     inputSchema: z.object({
       label: z.string().describe("Country name, e.g. 'Vietnam'"),
-      profile: factorSchema.describe(
-        "Realistic 1-5 factor scores based on climate, income, food culture. REQUIRED — do not leave blank.",
-      ),
+      profile: z.record(z.string(), z.number().min(1).max(5)).optional()
+        .describe("Factor scores keyed by factor ID, each 1-5. REQUIRED — do not leave blank."),
       avgMarketPrice: z
         .number()
         .describe("Average premium gelato cup price in USD for this market. REQUIRED."),
@@ -60,7 +44,8 @@ export const toolSchemas = {
       "Add a new fruit option. Flavor familiarity rows for all existing countries will be auto-created.",
     inputSchema: z.object({
       label: z.string().describe("Fruit name, e.g. 'Yuzu'"),
-      profile: fruitFactorSchema.optional(),
+      profile: z.record(z.string(), z.number().min(1).max(5)).optional()
+        .describe("Factor scores keyed by factor ID, each 1-5."),
     }),
   },
 

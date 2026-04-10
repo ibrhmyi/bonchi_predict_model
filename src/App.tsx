@@ -9,18 +9,16 @@ import { ScenarioPanel } from "./components/ScenarioPanel";
 import { useToolHandlers } from "./llm/useToolHandlers";
 import { debounce, loadCloudState, saveCloudState } from "./utils/cloudPersistence";
 import {
+  buildDefaultWeights,
+  buildEmptyProfile,
   countries as initialCountries,
+  defaultFactorDefs,
   defaultSelection,
-  emptyCountryProfile,
-  emptyFruitProfile,
-  factorDefinitions,
-  factorLabels,
-  factors,
   fruits as initialFruits,
   gelatoBases as initialGelatoBases,
   strategyPresets as initialStrategyPresets,
   type CountryOption,
-  type Factor,
+  type FactorDef,
   type FruitOption,
   type GelatoBase,
   type StrategyPreset,
@@ -92,6 +90,9 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("analyze");
 
+  // Dynamic factor definitions
+  const [factorDefs, setFactorDefs] = useState<FactorDef[]>(initial?.factorDefs ?? defaultFactorDefs);
+
   // Core model data
   const [countries, setCountries] = useState<CountryOption[]>(initial?.countries ?? initialCountries);
   const [fruits, setFruits] = useState<FruitOption[]>(initial?.fruits ?? initialFruits);
@@ -133,6 +134,7 @@ export default function App() {
     (async () => {
       const [workspaceRes, chatRes] = await Promise.all([
         loadCloudState<{
+          factorDefs?: FactorDef[];
           countries?: CountryOption[]; fruits?: FruitOption[]; bases?: GelatoBase[]; presets?: StrategyPreset[];
           countryId?: string; baseId?: string; presetId?: string;
           pricePoints?: Record<string, number>; pricePoint?: number;
@@ -149,6 +151,7 @@ export default function App() {
       }
       const cloudWorkspace = workspaceRes.data;
       if (cloudWorkspace) {
+        if (cloudWorkspace.factorDefs) setFactorDefs(cloudWorkspace.factorDefs);
         if (cloudWorkspace.countries) setCountries(cloudWorkspace.countries);
         if (cloudWorkspace.fruits) setFruits(cloudWorkspace.fruits);
         if (cloudWorkspace.bases) setBases(cloudWorkspace.bases);
@@ -159,7 +162,6 @@ export default function App() {
         if (cloudWorkspace.countryId) setCountryId(cloudWorkspace.countryId);
         if (cloudWorkspace.baseId) setBaseId(cloudWorkspace.baseId);
         if (cloudWorkspace.presetId) setPresetId(cloudWorkspace.presetId);
-        // Migrate single pricePoint → per-base pricePoints
         if (cloudWorkspace.pricePoints) {
           setPricePoints(cloudWorkspace.pricePoints);
         } else if (typeof cloudWorkspace.pricePoint === "number") {
@@ -181,13 +183,13 @@ export default function App() {
   );
   useEffect(() => {
     const payload = {
-      countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights,
+      factorDefs, countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights,
       pricingByCountry: pricingData, regionalFlavorBonus: flavorData,
       baseProductionCost: productionCostData,
     };
     saveState(payload);
     if (cloudLoaded) debouncedCloudSave(payload);
-  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights, pricingData, flavorData, productionCostData, cloudLoaded, debouncedCloudSave]);
+  }, [factorDefs, countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights, pricingData, flavorData, productionCostData, cloudLoaded, debouncedCloudSave]);
 
   // Debounced chat history sync
   const debouncedChatSave = useMemo(
@@ -201,7 +203,7 @@ export default function App() {
   // Tool handlers for the LLM
   const handleToolCall = useToolHandlers(
     {
-      countries, fruits, bases, presets,
+      countries, fruits, bases, presets, factorDefs,
       pricingData, flavorData, productionCostData,
       countryId, baseId, presetId, pricePoints, weights,
     },
@@ -223,12 +225,11 @@ export default function App() {
     [safePreset, weights],
   );
   const weightsModified = useMemo(
-    () => factors.some((f) => Math.abs(weights[f] - defaultWeights[f]) > 0.001),
-    [weights, defaultWeights],
+    () => factorDefs.some((fd) => Math.abs((weights[fd.id] ?? 1) - (defaultWeights[fd.id] ?? 1)) > 0.001),
+    [weights, defaultWeights, factorDefs],
   );
 
-  // Data completeness — surfaces the correctness gap where a country added
-  // without flavor data produces meaningless rankings.
+  // Data completeness
   const completeness = selectedCountry
     ? countryDataCompleteness(selectedCountry.id, fruits, flavorData)
     : null;
@@ -245,6 +246,7 @@ export default function App() {
           country: selectedCountry,
           base: selectedBase,
           fruits, weights, pricePoint,
+          factorDefs,
           data: dataOverrides,
         })
       : [];
@@ -268,11 +270,47 @@ export default function App() {
     if (scenario.pricePoints) {
       setPricePoints(scenario.pricePoints);
     } else if (typeof scenario.pricePoint === "number") {
-      // Legacy scenario with single pricePoint
       setPricePoints((prev) => ({ ...prev, [scenario.baseId]: scenario.pricePoint }));
     }
     setWeights(scenario.weights);
     setActiveTab("analyze");
+  }, []);
+
+  // Factor management handlers
+  const handleAddFactor = useCallback(() => {
+    const id = `factor-${Date.now()}`;
+    const label = `Factor ${factorDefs.length + 1}`;
+    setFactorDefs((prev) => [...prev, { id, label, definition: "New scoring factor." }]);
+    // Add default value (3) to all existing entities
+    setCountries((prev) => prev.map((c) => ({ ...c, profile: { ...c.profile, [id]: 3 } })));
+    setFruits((prev) => prev.map((f) => ({ ...f, profile: { ...f.profile, [id]: 3 } })));
+    setBases((prev) => prev.map((b) => ({ ...b, profile: { ...b.profile, [id]: 3 } })));
+    setPresets((prev) => prev.map((p) => ({ ...p, weights: { ...p.weights, [id]: 1 } })));
+    setWeights((prev) => ({ ...prev, [id]: 1 }));
+  }, [factorDefs.length]);
+
+  const handleDeleteFactor = useCallback((factorId: string) => {
+    if (factorDefs.length <= 1) return;
+    setFactorDefs((prev) => prev.filter((fd) => fd.id !== factorId));
+    // Remove from all entities
+    const strip = (profile: Record<string, number>) => {
+      const next = { ...profile };
+      delete next[factorId];
+      return next;
+    };
+    setCountries((prev) => prev.map((c) => ({ ...c, profile: strip(c.profile) })));
+    setFruits((prev) => prev.map((f) => ({ ...f, profile: strip(f.profile) })));
+    setBases((prev) => prev.map((b) => ({ ...b, profile: strip(b.profile) })));
+    setPresets((prev) => prev.map((p) => ({ ...p, weights: strip(p.weights) })));
+    setWeights((prev) => strip(prev));
+  }, [factorDefs.length]);
+
+  const handleRenameFactor = useCallback((factorId: string, label: string) => {
+    setFactorDefs((prev) => prev.map((fd) => fd.id === factorId ? { ...fd, label } : fd));
+  }, []);
+
+  const handleFactorDefinitionChange = useCallback((factorId: string, definition: string) => {
+    setFactorDefs((prev) => prev.map((fd) => fd.id === factorId ? { ...fd, definition } : fd));
   }, []);
 
   const tabClass = (tab: ActiveTab) =>
@@ -375,6 +413,7 @@ export default function App() {
               base={selectedBase}
               preset={safePreset}
               ranking={ranking}
+              factorDefs={factorDefs}
             />
 
             {/* 3. Optional shelves */}
@@ -458,13 +497,13 @@ export default function App() {
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  {factors.map((factor) => {
-                    const isModified = Math.abs(weights[factor] - defaultWeights[factor]) > 0.001;
+                  {factorDefs.map((fd) => {
+                    const isModified = Math.abs((weights[fd.id] ?? 1) - (defaultWeights[fd.id] ?? 1)) > 0.001;
                     return (
-                      <label key={factor} className="block">
+                      <label key={fd.id} className="block">
                         <div className="mb-1 flex items-center justify-between text-[11px]">
                           <span className="flex items-center gap-1 text-ink">
-                            {factorLabels[factor]}
+                            {fd.label}
                             {isModified && (
                               <span
                                 aria-label="Modified from strategy default"
@@ -473,16 +512,16 @@ export default function App() {
                               />
                             )}
                           </span>
-                          <span className="font-medium tabular-nums text-stone">{weights[factor].toFixed(1)}x</span>
+                          <span className="font-medium tabular-nums text-stone">{(weights[fd.id] ?? 1).toFixed(1)}x</span>
                         </div>
                         <input
                           type="range" min="0.4" max="2" step="0.1"
-                          value={weights[factor]}
-                          onChange={(e) => setWeights((w) => ({ ...w, [factor]: Number(e.target.value) }))}
-                          aria-label={`${factorLabels[factor]} weight, currently ${weights[factor].toFixed(1)} times. ${factorDefinitions[factor]}`}
+                          value={weights[fd.id] ?? 1}
+                          onChange={(e) => setWeights((w) => ({ ...w, [fd.id]: Number(e.target.value) }))}
+                          aria-label={`${fd.label} weight, currently ${(weights[fd.id] ?? 1).toFixed(1)} times. ${fd.definition}`}
                           className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
                         />
-                        <p className="mt-1 text-[10px] leading-snug text-stone/80">{factorDefinitions[factor]}</p>
+                        <p className="mt-1 text-[10px] leading-snug text-stone/80">{fd.definition}</p>
                       </label>
                     );
                   })}
@@ -520,17 +559,18 @@ export default function App() {
         {activeTab === "data" ? (
           <div className="space-y-6">
             <ModelLibrary
-              countries={countries} fruits={fruits} bases={bases} presets={presets} weights={weights}
+              countries={countries} fruits={fruits} bases={bases} presets={presets}
+              factorDefs={factorDefs} weights={weights}
               pricingByCountry={pricingData} flavorData={flavorData}
               productionCostData={productionCostData}
               data={dataOverrides}
               onAddCountry={() => {
                 const id = `country-${Date.now()}`;
                 const label = `New Country ${countries.length + 1}`;
-                setCountries((c) => [...c, { id, label, profile: emptyCountryProfile() }]);
+                setCountries((c) => [...c, { id, label, profile: buildEmptyProfile(factorDefs) }]);
                 setPricingData((prev) => ({ ...prev, [id]: { avgMarketPrice: 4, currency: "USD" } }));
                 setFlavorData((prev) => {
-                  const updated = { ...prev, [id]: {} as Record<string, typeof prev[string][string]> };
+                  const updated = { ...prev, [id]: {} as Record<string, RegionalFlavorEntry> };
                   for (const fr of fruits) updated[id][fr.id] = { familiarity: "low" as const };
                   return updated;
                 });
@@ -547,7 +587,7 @@ export default function App() {
               onAddFruit={() => {
                 const id = `fruit-${Date.now()}`;
                 const label = `New Fruit ${fruits.length + 1}`;
-                setFruits((f) => [...f, { id, label, profile: emptyFruitProfile() }]);
+                setFruits((f) => [...f, { id, label, profile: buildEmptyProfile(factorDefs) }]);
                 setFlavorData((prev) => {
                   const updated = { ...prev };
                   for (const c of countries) updated[c.id] = { ...updated[c.id], [id]: { familiarity: "low" as const } };
@@ -568,7 +608,7 @@ export default function App() {
               onAddBase={() => {
                 const id = `base-${Date.now()}`;
                 const label = `New Base ${bases.length + 1}`;
-                setBases((b) => [...b, { id, label, profile: emptyCountryProfile() }]);
+                setBases((b) => [...b, { id, label, profile: buildEmptyProfile(factorDefs) }]);
                 setProductionCostData((prev) => ({ ...prev, [id]: 2.5 }));
                 setPricePoints((prev) => ({ ...prev, [id]: 5 }));
               }}
@@ -581,17 +621,21 @@ export default function App() {
               }}
               onAddPreset={() => {
                 const id = `preset-${Date.now()}`;
-                setPresets((p) => [...p, { id, label: `New Strategy ${presets.length + 1}`, weights: emptyCountryProfile(), summary: "" }]);
+                setPresets((p) => [...p, { id, label: `New Strategy ${presets.length + 1}`, weights: buildDefaultWeights(factorDefs), summary: "" }]);
               }}
               onDeletePreset={(id) => {
                 if (presets.length <= 1) return;
                 setPresets((p) => p.filter((x) => x.id !== id));
                 if (presetId === id) setPresetId(presets.find((p) => p.id !== id)?.id ?? "");
               }}
+              onAddFactor={handleAddFactor}
+              onDeleteFactor={handleDeleteFactor}
+              onRenameFactor={handleRenameFactor}
+              onFactorDefinitionChange={handleFactorDefinitionChange}
               onCountryLabelChange={(id, label) => setCountries((c) => c.map((x) => x.id === id ? { ...x, label } : x))}
               onCountryFactorChange={(id, factor, value) => setCountries((c) => c.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}
               onFruitLabelChange={(id, label) => setFruits((f) => f.map((x) => x.id === id ? { ...x, label } : x))}
-              onFruitFactorChange={(id, factor: Factor, value) => setFruits((f) => f.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}
+              onFruitFactorChange={(id, factor, value) => setFruits((f) => f.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}
               onBaseLabelChange={(id, label) => setBases((b) => b.map((x) => x.id === id ? { ...x, label } : x))}
               onBaseFactorChange={(id, factor, value) => setBases((b) => b.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}
               onPresetLabelChange={(id, label) => setPresets((p) => p.map((x) => x.id === id ? { ...x, label } : x))}
