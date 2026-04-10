@@ -28,9 +28,13 @@ type ModelLibraryProps = {
   productionCostData: Record<string, number>;
   data?: DataOverrides;
   onAddCountry: () => void;
+  onDeleteCountry: (id: string) => void;
   onAddFruit: () => void;
+  onDeleteFruit: (id: string) => void;
   onAddBase: () => void;
+  onDeleteBase: (id: string) => void;
   onAddPreset: () => void;
+  onDeletePreset: (id: string) => void;
   onCountryLabelChange: (id: string, label: string) => void;
   onCountryFactorChange: (id: string, factor: Factor, value: number) => void;
   onFruitLabelChange: (id: string, label: string) => void;
@@ -69,6 +73,17 @@ function VerbalSelect({ value, onChange }: { value: number; onChange: (v: number
         <option key={vl} value={vl}>{vl}</option>
       ))}
     </select>
+  );
+}
+
+function DeleteButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} title="Remove"
+      className="rounded-full p-1 text-stone/50 transition hover:bg-red-50 hover:text-red-500">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
   );
 }
 
@@ -122,7 +137,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
   const {
     countries, fruits, bases, presets, weights, data,
     pricingByCountry, flavorData, productionCostData,
-    onAddCountry, onAddFruit, onAddBase, onAddPreset,
+    onAddCountry, onDeleteCountry, onAddFruit, onDeleteFruit, onAddBase, onDeleteBase, onAddPreset, onDeletePreset,
     onCountryLabelChange, onCountryFactorChange,
     onFruitLabelChange, onFruitFactorChange,
     onBaseLabelChange, onBaseFactorChange,
@@ -144,6 +159,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Country</th>
               {factors.map((f) => <FactorHeader key={f} factor={f} />)}
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -155,6 +171,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
                     <VerbalSelect value={c.profile[f]} onChange={(v) => onCountryFactorChange(c.id, f, v)} />
                   </td>
                 ))}
+                <td className="px-3 py-2">
+                  {countries.length > 1 && <DeleteButton onClick={() => onDeleteCountry(c.id)} />}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -170,6 +189,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
             <tr className="text-left text-xs uppercase tracking-[0.2em] text-stone">
               <th className="px-3 py-2">Fruit</th>
               {fruitFactors.map((f) => <FactorHeader key={f} factor={f} />)}
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -181,6 +201,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
                     <VerbalSelect value={fr.profile[f]} onChange={(v) => onFruitFactorChange(fr.id, f, v)} />
                   </td>
                 ))}
+                <td className="px-3 py-2">
+                  {fruits.length > 1 && <DeleteButton onClick={() => onDeleteFruit(fr.id)} />}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -197,6 +220,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
               <th className="px-3 py-2">Base</th>
               {factors.map((f) => <FactorHeader key={f} factor={f} />)}
               <th className="px-3 py-2">Cost ($)</th>
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -210,6 +234,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
                 ))}
                 <td className="px-3 py-2">
                   <NumInput value={productionCostData[b.id] ?? 2.5} onChange={(v) => onProductionCostChange(b.id, v)} min={0} max={50} step={0.5} />
+                </td>
+                <td className="px-3 py-2">
+                  {bases.length > 1 && <DeleteButton onClick={() => onDeleteBase(b.id)} />}
                 </td>
               </tr>
             ))}
@@ -294,6 +321,7 @@ export function ModelLibrary(props: ModelLibraryProps) {
               <th className="px-3 py-2">Preset</th>
               {factors.map((f) => <FactorHeader key={f} factor={f} />)}
               <th className="px-3 py-2">Summary</th>
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -306,6 +334,9 @@ export function ModelLibrary(props: ModelLibraryProps) {
                   </td>
                 ))}
                 <td className="px-3 py-2"><TextInput value={p.summary} onChange={(v) => onPresetSummaryChange(p.id, v)} className="w-64" /></td>
+                <td className="px-3 py-2">
+                  {presets.length > 1 && <DeleteButton onClick={() => onDeletePreset(p.id)} />}
+                </td>
               </tr>
             ))}
           </tbody>

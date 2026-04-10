@@ -34,7 +34,7 @@ export function BenchmarkMatrix({ countries, bases, fruits, weights, data }: Ben
           <h2 className="font-serif text-2xl text-ink">Score Benchmarks</h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-stone">
             See how all {fruits.length * bases.length} fruit x base combinations score across {countries.length} markets.
-            Includes regional flavor and cost efficiency adjustments.
+            Scores include factor matching and regional flavor bonus. Price fit is excluded (set per-base in Analyze).
           </p>
         </div>
         <button

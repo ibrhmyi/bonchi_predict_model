@@ -537,6 +537,13 @@ export default function App() {
                 setCountryId(id);
                 setActiveTab("analyze");
               }}
+              onDeleteCountry={(id) => {
+                if (countries.length <= 1) return;
+                setCountries((c) => c.filter((x) => x.id !== id));
+                setPricingData((prev) => { const next = { ...prev }; delete next[id]; return next; });
+                setFlavorData((prev) => { const next = { ...prev }; delete next[id]; return next; });
+                if (countryId === id) setCountryId(countries.find((c) => c.id !== id)?.id ?? "");
+              }}
               onAddFruit={() => {
                 const id = `fruit-${Date.now()}`;
                 const label = `New Fruit ${fruits.length + 1}`;
@@ -547,6 +554,17 @@ export default function App() {
                   return updated;
                 });
               }}
+              onDeleteFruit={(id) => {
+                if (fruits.length <= 1) return;
+                setFruits((f) => f.filter((x) => x.id !== id));
+                setFlavorData((prev) => {
+                  const next = { ...prev };
+                  for (const cId of Object.keys(next)) {
+                    const cFlavors = { ...next[cId] }; delete cFlavors[id]; next[cId] = cFlavors;
+                  }
+                  return next;
+                });
+              }}
               onAddBase={() => {
                 const id = `base-${Date.now()}`;
                 const label = `New Base ${bases.length + 1}`;
@@ -554,9 +572,21 @@ export default function App() {
                 setProductionCostData((prev) => ({ ...prev, [id]: 2.5 }));
                 setPricePoints((prev) => ({ ...prev, [id]: 5 }));
               }}
+              onDeleteBase={(id) => {
+                if (bases.length <= 1) return;
+                setBases((b) => b.filter((x) => x.id !== id));
+                setProductionCostData((prev) => { const next = { ...prev }; delete next[id]; return next; });
+                setPricePoints((prev) => { const next = { ...prev }; delete next[id]; return next; });
+                if (baseId === id) setBaseId(bases.find((b) => b.id !== id)?.id ?? "");
+              }}
               onAddPreset={() => {
                 const id = `preset-${Date.now()}`;
                 setPresets((p) => [...p, { id, label: `New Strategy ${presets.length + 1}`, weights: emptyCountryProfile(), summary: "" }]);
+              }}
+              onDeletePreset={(id) => {
+                if (presets.length <= 1) return;
+                setPresets((p) => p.filter((x) => x.id !== id));
+                if (presetId === id) setPresetId(presets.find((p) => p.id !== id)?.id ?? "");
               }}
               onCountryLabelChange={(id, label) => setCountries((c) => c.map((x) => x.id === id ? { ...x, label } : x))}
               onCountryFactorChange={(id, factor, value) => setCountries((c) => c.map((x) => x.id === id ? { ...x, profile: { ...x.profile, [factor]: clampInput(value) } } : x))}

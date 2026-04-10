@@ -23,7 +23,6 @@ export function MethodologyPanel() {
     { label: "Demographics", keys: ["demographics:uae", "demographics:germany", "demographics:singapore", "demographics:poland"] },
     { label: "Pricing", keys: ["pricing:uae", "pricing:germany", "pricing:singapore", "pricing:poland"] },
     { label: "Regional Flavor Data", keys: ["flavor:general"] },
-    { label: "Fruit Sourcing Costs", keys: ["cost:general"] },
     { label: "Competitor Intelligence", keys: ["competitors:general"] },
     { label: "Production Costs", keys: ["production:general"] },
   ];

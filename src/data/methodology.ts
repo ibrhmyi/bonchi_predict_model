@@ -71,13 +71,7 @@ export const dataConfidence: Record<string, { confidence: Confidence; source: st
   // Regional flavor bonuses
   "flavor:general": {
     confidence: "estimated",
-    source: "Familiarity ratings based on import data trends, Google Trends analysis, and local retail surveys. Bonus values are calibrated estimates.",
-  },
-
-  // Fruit costs
-  "cost:general": {
-    confidence: "placeholder",
-    source: "Cost indices are directional estimates. Replace with actual Bonchi procurement data for production use.",
+    source: "Familiarity ratings based on import data trends, Google Trends analysis, and local retail surveys.",
   },
 
   // Competitors
@@ -97,7 +91,7 @@ export const dataConfidence: Record<string, { confidence: Confidence; source: st
 export const methodologySections = [
   {
     title: "7-Factor Scoring Model",
-    body: "Each fruit×base concept is scored against a country's market profile across 7 factors: Cream, Fruit, Refreshing, Health, Premium, Cultural Fit, and Exotic Appetite. Each factor is rated 1–5 for both the market (demand) and the concept (supply). Match score = 5 − |demand − supply|, then weighted by the active strategy.",
+    body: "Each fruit×base concept is scored against a country's market profile across 7 factors: Cream, Fruit, Refreshing, Health, Premium, Cultural Fit, and Exotic Appetite. Each factor is rated on a verbal scale (Very Low to Very High, mapped to 1–5 internally). Match score = 5 − |demand − supply|, then weighted by the active strategy.",
   },
   {
     title: "Profile Blending",
@@ -105,22 +99,18 @@ export const methodologySections = [
   },
   {
     title: "Score Composition",
-    body: "Final score = Base Score (0–100 from weighted factor matching) + Regional Flavor Bonus (0–8 pts based on local familiarity) + Cost Efficiency Bonus (−4 to +5 pts based on sourcing cost and supply reliability) + Price Fit Bonus (variable, based on price vs. market average and local price sensitivity). Clamped to 0–100.",
+    body: "Final score = Base Score (0–100 from weighted factor matching) + Regional Flavor Bonus (0–8 pts based on local familiarity) + Price Fit Bonus (approx −5 to +5 pts based on how well the selling price matches the local market average). Clamped to 0–100.",
   },
   {
     title: "Regional Flavor Bonus",
-    body: "Each fruit has a familiarity rating per country (high/medium/low/novel) and a bonus multiplier (0–1.0). High familiarity means the flavor already sells well locally. Novel means it has Japanese exotic appeal. The raw bonus is scaled up to a maximum of 8 points.",
-  },
-  {
-    title: "Cost Efficiency",
-    body: "Combines sourcing cost index (1=cheap, 5=expensive) and supply reliability (1=unreliable, 5=year-round). The efficiency score penalizes expensive, unreliable sourcing and rewards cheap, reliable supply.",
+    body: "Each fruit has a familiarity rating per country: High, Medium, Low, or Novel. The bonus is derived automatically — High familiarity (well-known local flavor) gives the strongest boost, Novel (Japanese exotic appeal) gives a moderate boost, Medium gives a small boost, and Low gives minimal bonus. Maximum contribution is 8 points.",
   },
   {
     title: "Price Fit",
-    body: "Compares the set price point against the country's average market price, weighted by local price sensitivity (1=insensitive, 5=very price-conscious). Prices within 80–120% of market average score highest.",
+    body: "Compares the selling price (set per product base) against the country's average market price. Prices within 80–120% of market average score highest (5/5). Prices above 150% or below 50% of market average are penalized most. The bonus/penalty scales linearly between these thresholds.",
   },
   {
     title: "Margin Estimate",
-    body: "Estimated margin = Price Point − (Base Production Cost × Fruit Cost Index × 0.3 × Country Cost Multiplier). This is a rough unit-level estimate, not a full P&L.",
+    body: "Estimated margin = Selling Price − Base Production Cost. This is a simple unit-level estimate. Production costs are set per product format (e.g. Sorbet $2, Premium Gelato $4). All fruit is produced in Japan — there is no per-country sourcing cost adjustment.",
   },
 ];
