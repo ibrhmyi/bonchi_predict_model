@@ -14,6 +14,7 @@ type ScenarioPanelProps = {
   baseId: string;
   presetId: string;
   pricePoint: number;
+  pricePoints: Record<string, number>;
   weights: FactorMap;
   topConcept: string;
   topScore: number;
@@ -28,6 +29,7 @@ export function ScenarioPanel({
   baseId,
   presetId,
   pricePoint,
+  pricePoints,
   weights,
   topConcept,
   topScore,
@@ -51,6 +53,7 @@ export function ScenarioPanel({
       baseId,
       presetId,
       pricePoint,
+      pricePoints: { ...pricePoints },
       weights: { ...weights },
       topConcept,
       topScore,

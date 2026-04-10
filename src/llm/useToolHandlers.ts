@@ -12,7 +12,7 @@ import {
   type StrategyPreset,
 } from "../data/marketFit";
 import type { PricingProfile } from "../data/pricing";
-import type { FlavorFamiliarity, FruitCostEntry, RegionalFlavorEntry } from "../data/regionalData";
+import type { FlavorFamiliarity, RegionalFlavorEntry } from "../data/regionalData";
 import { rankFruitConcepts, type DataOverrides } from "../utils/scoring";
 import type { ToolName } from "./tools";
 
@@ -23,12 +23,11 @@ type State = {
   presets: StrategyPreset[];
   pricingData: Record<string, PricingProfile>;
   flavorData: Record<string, Record<string, RegionalFlavorEntry>>;
-  fruitCostData: Record<string, Record<string, FruitCostEntry>>;
   productionCostData: Record<string, number>;
   countryId: string;
   baseId: string;
   presetId: string;
-  pricePoint: number;
+  pricePoints: Record<string, number>;
   weights: FactorMap;
 };
 
@@ -39,12 +38,11 @@ type Setters = {
   setPresets: React.Dispatch<React.SetStateAction<StrategyPreset[]>>;
   setPricingData: React.Dispatch<React.SetStateAction<Record<string, PricingProfile>>>;
   setFlavorData: React.Dispatch<React.SetStateAction<Record<string, Record<string, RegionalFlavorEntry>>>>;
-  setFruitCostData: React.Dispatch<React.SetStateAction<Record<string, Record<string, FruitCostEntry>>>>;
   setProductionCostData: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   setCountryId: React.Dispatch<React.SetStateAction<string>>;
   setBaseId: React.Dispatch<React.SetStateAction<string>>;
   setPresetId: React.Dispatch<React.SetStateAction<string>>;
-  setPricePoint: React.Dispatch<React.SetStateAction<number>>;
+  setPricePoints: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 };
 
 const slugify = (s: string) =>
@@ -60,13 +58,13 @@ export function useToolHandlers(state: State, setters: Setters) {
   return useCallback(
     async (toolName: ToolName, input: Record<string, unknown>): Promise<unknown> => {
       const s = stateRef.current;
+      const activePricePoint = s.pricePoints[s.baseId] ?? 5;
 
       switch (toolName) {
         case "getSnapshot": {
           const dataOverrides: DataOverrides = {
             pricingByCountry: s.pricingData,
             regionalFlavorBonus: s.flavorData,
-            fruitCostByCountry: s.fruitCostData,
             baseProductionCost: s.productionCostData,
           };
           const country = s.countries.find((c) => c.id === s.countryId) ?? s.countries[0];
@@ -78,7 +76,7 @@ export function useToolHandlers(state: State, setters: Setters) {
                   base,
                   fruits: s.fruits,
                   weights: s.weights,
-                  pricePoint: s.pricePoint,
+                  pricePoint: activePricePoint,
                   data: dataOverrides,
                 }).slice(0, 5)
               : [];
@@ -94,7 +92,7 @@ export function useToolHandlers(state: State, setters: Setters) {
               baseId: s.baseId,
               baseLabel: base?.label,
               presetId: s.presetId,
-              pricePoint: s.pricePoint,
+              pricePoint: activePricePoint,
             },
             topConcepts: ranking.map((r) => ({
               rank: ranking.indexOf(r) + 1,
@@ -119,16 +117,14 @@ export function useToolHandlers(state: State, setters: Setters) {
             ...prev,
             [id]: {
               avgMarketPrice: typeof input.avgMarketPrice === "number" ? input.avgMarketPrice : 4,
-              priceSensitivity: typeof input.priceSensitivity === "number" ? input.priceSensitivity : 3,
               currency: typeof input.currency === "string" ? input.currency : "USD",
-              costMultiplier: typeof input.costMultiplier === "number" ? input.costMultiplier : 1,
             },
           }));
 
-          // Build flavor lookup from LLM input, fall back to low/0 for missing fruits
-          type FlavorInput = { fruitId: string; familiarity?: FlavorFamiliarity; bonus?: number; reason?: string };
-          const flavorInputs = Array.isArray(input.flavorBonuses)
-            ? (input.flavorBonuses as FlavorInput[])
+          // Build flavor lookup from LLM input, fall back to "low" for missing fruits
+          type FlavorInput = { fruitId: string; familiarity?: FlavorFamiliarity };
+          const flavorInputs = Array.isArray(input.flavorFamiliarity)
+            ? (input.flavorFamiliarity as FlavorInput[])
             : [];
           const flavorMap = new Map<string, FlavorInput>();
           for (const fb of flavorInputs) if (fb?.fruitId) flavorMap.set(fb.fruitId, fb);
@@ -137,41 +133,18 @@ export function useToolHandlers(state: State, setters: Setters) {
             for (const fr of s.fruits) {
               const fb = flavorMap.get(fr.id);
               next[id][fr.id] = {
-                bonus: typeof fb?.bonus === "number" ? fb.bonus : 0,
                 familiarity: (fb?.familiarity ?? "low") as FlavorFamiliarity,
-                reason: fb?.reason ?? "",
-              };
-            }
-            return next;
-          });
-
-          type CostInput = { fruitId: string; costIndex?: number; supplyReliability?: number; sourceNote?: string };
-          const costInputs = Array.isArray(input.fruitCosts) ? (input.fruitCosts as CostInput[]) : [];
-          const costMap = new Map<string, CostInput>();
-          for (const c of costInputs) if (c?.fruitId) costMap.set(c.fruitId, c);
-          setters.setFruitCostData((prev) => {
-            const next = { ...prev };
-            for (const fr of s.fruits) {
-              const ci = costMap.get(fr.id);
-              next[fr.id] = {
-                ...next[fr.id],
-                [id]: {
-                  costIndex: typeof ci?.costIndex === "number" ? ci.costIndex : 2.5,
-                  supplyReliability: typeof ci?.supplyReliability === "number" ? ci.supplyReliability : 3,
-                  sourceNote: ci?.sourceNote ?? "",
-                },
               };
             }
             return next;
           });
 
           const filledFlavor = flavorMap.size;
-          const filledCost = costMap.size;
           return {
             ok: true,
             id,
             label,
-            message: `Added ${label} with ${filledFlavor}/${s.fruits.length} flavor rows and ${filledCost}/${s.fruits.length} sourcing rows filled.`,
+            message: `Added ${label} with ${filledFlavor}/${s.fruits.length} flavor rows filled.`,
           };
         }
 
@@ -188,17 +161,11 @@ export function useToolHandlers(state: State, setters: Setters) {
             for (const c of s.countries) {
               next[c.id] = {
                 ...next[c.id],
-                [id]: { bonus: 0, familiarity: "low" as FlavorFamiliarity, reason: "" },
+                [id]: { familiarity: "low" as FlavorFamiliarity },
               };
             }
             return next;
           });
-          setters.setFruitCostData((prev) => ({
-            ...prev,
-            [id]: Object.fromEntries(
-              s.countries.map((c) => [c.id, { costIndex: 2.5, supplyReliability: 3, sourceNote: "" }]),
-            ),
-          }));
           return { ok: true, id, label, message: `Added ${label}` };
         }
 
@@ -209,17 +176,15 @@ export function useToolHandlers(state: State, setters: Setters) {
           setters.setPricingData((prev) => ({
             ...prev,
             [cId]: {
-              ...(prev[cId] ?? { avgMarketPrice: 4, priceSensitivity: 3, currency: "USD", costMultiplier: 1 }),
+              ...(prev[cId] ?? { avgMarketPrice: 4, currency: "USD" }),
               ...(typeof input.avgMarketPrice === "number" ? { avgMarketPrice: input.avgMarketPrice } : {}),
-              ...(typeof input.priceSensitivity === "number" ? { priceSensitivity: input.priceSensitivity } : {}),
-              ...(typeof input.costMultiplier === "number" ? { costMultiplier: input.costMultiplier } : {}),
               ...(typeof input.currency === "string" ? { currency: input.currency } : {}),
             },
           }));
           return { ok: true, message: `Updated pricing for ${country.label}` };
         }
 
-        case "updateFlavorBonus": {
+        case "updateFlavorFamiliarity": {
           const cId = String(input.countryId);
           const fId = String(input.fruitId);
           const country = s.countries.find((c) => c.id === cId);
@@ -230,35 +195,11 @@ export function useToolHandlers(state: State, setters: Setters) {
             [cId]: {
               ...prev[cId],
               [fId]: {
-                ...(prev[cId]?.[fId] ?? { bonus: 0, familiarity: "low" as FlavorFamiliarity, reason: "" }),
-                ...(typeof input.bonus === "number" ? { bonus: input.bonus } : {}),
-                ...(typeof input.familiarity === "string" ? { familiarity: input.familiarity as FlavorFamiliarity } : {}),
-                ...(typeof input.reason === "string" ? { reason: input.reason } : {}),
+                familiarity: (typeof input.familiarity === "string" ? input.familiarity : "low") as FlavorFamiliarity,
               },
             },
           }));
           return { ok: true, message: `Updated ${fruit.label} familiarity in ${country.label}` };
-        }
-
-        case "updateFruitCost": {
-          const cId = String(input.countryId);
-          const fId = String(input.fruitId);
-          const country = s.countries.find((c) => c.id === cId);
-          const fruit = s.fruits.find((f) => f.id === fId);
-          if (!country || !fruit) return { ok: false, error: "Country or fruit not found" };
-          setters.setFruitCostData((prev) => ({
-            ...prev,
-            [fId]: {
-              ...prev[fId],
-              [cId]: {
-                ...(prev[fId]?.[cId] ?? { costIndex: 2.5, supplyReliability: 3, sourceNote: "" }),
-                ...(typeof input.costIndex === "number" ? { costIndex: input.costIndex } : {}),
-                ...(typeof input.supplyReliability === "number" ? { supplyReliability: input.supplyReliability } : {}),
-                ...(typeof input.sourceNote === "string" ? { sourceNote: input.sourceNote } : {}),
-              },
-            },
-          }));
-          return { ok: true, message: `Updated ${fruit.label} sourcing in ${country.label}` };
         }
 
         case "setSelection": {
@@ -285,7 +226,8 @@ export function useToolHandlers(state: State, setters: Setters) {
             }
           }
           if (typeof input.pricePoint === "number") {
-            setters.setPricePoint(input.pricePoint);
+            const baseToSet = typeof input.baseId === "string" ? input.baseId : s.baseId;
+            setters.setPricePoints((prev) => ({ ...prev, [baseToSet]: input.pricePoint as number }));
             updates.push(`price=$${input.pricePoint}`);
           }
           return { ok: true, message: `Updated selection: ${updates.join(", ")}` };
@@ -296,7 +238,6 @@ export function useToolHandlers(state: State, setters: Setters) {
           const dataOverrides: DataOverrides = {
             pricingByCountry: s.pricingData,
             regionalFlavorBonus: s.flavorData,
-            fruitCostByCountry: s.fruitCostData,
             baseProductionCost: s.productionCostData,
           };
           const country = s.countries.find((c) => c.id === s.countryId);
@@ -307,14 +248,14 @@ export function useToolHandlers(state: State, setters: Setters) {
             base,
             fruits: s.fruits,
             weights: s.weights,
-            pricePoint: s.pricePoint,
+            pricePoint: activePricePoint,
             data: dataOverrides,
           }).slice(0, limit);
           return {
             ok: true,
             country: country.label,
             base: base.label,
-            pricePoint: s.pricePoint,
+            pricePoint: activePricePoint,
             results: ranking.map((r, i) => ({
               rank: i + 1,
               concept: r.conceptLabel,
@@ -332,7 +273,6 @@ export function useToolHandlers(state: State, setters: Setters) {
         }
 
         default: {
-          // Exhaustiveness guard
           const _exhaustive: never = toolName;
           return { ok: false, error: `Unknown tool: ${String(_exhaustive)}` };
         }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { factorLabels, type CountryOption, type GelatoBase, type StrategyPreset } from "../data/marketFit";
 import { confidenceLabels, dataConfidence } from "../data/methodology";
-import { getCostDollarSign, getFlavorFamiliarityLabel, getMatchQualityLabel, getSupplyLabel } from "../data/regionalData";
+import { getFlavorFamiliarityLabel, getMatchQualityLabel } from "../data/regionalData";
 import { getPriceImpact } from "../data/pricing";
 import type { RankedConcept } from "../utils/scoring";
 import { CompetitorPanel } from "./CompetitorPanel";
@@ -90,7 +90,6 @@ export function ResultsPanel({
   if (!topPick) return null;
 
   const countryConf = dataConfidence[`country:${country.id}`];
-  const costConf = dataConfidence["cost:general"];
 
   // Top 3 factors sorted by weighted match
   const sortedFactors = [...topPick.factorDetails].sort(
@@ -143,11 +142,6 @@ export function ResultsPanel({
                     +{topPick.regionalBonus.toFixed(1)} pts regional
                   </span>
                 )}
-                {topPick.costEfficiency && (
-                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    {getCostDollarSign(topPick.costEfficiency.costIndex)} sourcing · {getSupplyLabel(topPick.costEfficiency.supplyReliability)}
-                  </span>
-                )}
                 {priceImpact && (
                   <span
                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${priceImpactStyle[priceImpact].bg} ${priceImpactStyle[priceImpact].text}`}
@@ -171,15 +165,8 @@ export function ResultsPanel({
               </div>
               {topPick.estimatedMargin !== null && (
                 <div className="rounded-3xl bg-[#2D6A4F] px-5 py-4 text-white shadow-lg shadow-[#2D6A4F]/20">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] uppercase tracking-[0.28em] text-white/50">
-                      Est. Margin
-                    </span>
-                    {costConf && costConf.confidence === "placeholder" && (
-                      <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[8px] font-medium text-white/70" title={costConf.source}>
-                        est.
-                      </span>
-                    )}
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                    Est. Margin
                   </div>
                   <div className="mt-1 text-4xl font-bold tabular-nums">
                     ${topPick.estimatedMargin.toFixed(2)}
@@ -221,9 +208,6 @@ export function ResultsPanel({
                   score={detail.match}
                 />
               ))}
-              {topPick.costEfficiency && showAllFactors && (
-                <FactorBar label="Cost Efficiency" score={topPick.costEfficiency.score} />
-              )}
               {topPick.priceFit !== null && showAllFactors && (
                 <FactorBar label="Price Accessibility" score={topPick.priceFit} />
               )}
@@ -291,11 +275,6 @@ export function ResultsPanel({
                           className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${familiarityStyle}`}
                         >
                           {getFlavorFamiliarityLabel(flavorInfo.familiarity).label}
-                        </span>
-                      )}
-                      {entry.costEfficiency && (
-                        <span className="text-[10px] font-medium text-blue-600">
-                          {getCostDollarSign(entry.costEfficiency.costIndex)} · {getSupplyLabel(entry.costEfficiency.supplyReliability)}
                         </span>
                       )}
                       {entry.regionalBonus > 0 && (

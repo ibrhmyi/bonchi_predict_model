@@ -31,10 +31,8 @@ import {
   type PricingProfile,
 } from "./data/pricing";
 import {
-  fruitCostByCountry as initialFruitCostByCountry,
   regionalFlavorBonus as initialFlavorBonus,
   type FlavorFamiliarity,
-  type FruitCostEntry,
   type RegionalFlavorEntry,
 } from "./data/regionalData";
 import { countryDataCompleteness } from "./utils/dataCompleteness";
@@ -47,8 +45,12 @@ type ActiveTab = "analyze" | "data";
 
 const clampInput = (value: number) => Math.min(5, Math.max(1, value));
 
+// Build initial per-base price points from initial bases
+const initialPricePoints: Record<string, number> = Object.fromEntries(
+  initialGelatoBases.map((b) => [b.id, 5]),
+);
+
 // Collapsible "shelf" — neutral row that opens to reveal detail.
-// Used throughout Analyze to keep secondary stuff hidden until asked for.
 function Shelf({
   label,
   summary,
@@ -99,14 +101,20 @@ export default function App() {
   // Editable external data
   const [pricingData, setPricingData] = useState<Record<string, PricingProfile>>(initial?.pricingByCountry ?? initialPricingByCountry);
   const [flavorData, setFlavorData] = useState<Record<string, Record<string, RegionalFlavorEntry>>>(initial?.regionalFlavorBonus ?? initialFlavorBonus);
-  const [fruitCostData, setFruitCostData] = useState<Record<string, Record<string, FruitCostEntry>>>(initial?.fruitCostByCountry ?? initialFruitCostByCountry);
   const [productionCostData, setProductionCostData] = useState<Record<string, number>>(initial?.baseProductionCost ?? initialProductionCost);
 
   // Selections
   const [countryId, setCountryId] = useState<string>(initial?.countryId ?? defaultSelection.countryId);
   const [baseId, setBaseId] = useState<string>(initial?.baseId ?? defaultSelection.baseId);
   const [presetId, setPresetId] = useState<string>(initial?.presetId ?? defaultSelection.presetId);
-  const [pricePoint, setPricePoint] = useState(initial?.pricePoint ?? 5);
+  const [pricePoints, setPricePoints] = useState<Record<string, number>>(initial?.pricePoints ?? initialPricePoints);
+
+  // Active price for the currently selected base
+  const pricePoint = pricePoints[baseId] ?? 5;
+  const setPricePoint = useCallback(
+    (v: number) => setPricePoints((prev) => ({ ...prev, [baseId]: v })),
+    [baseId],
+  );
 
   const selectedPreset = presets.find((p) => p.id === presetId) ?? presets[0];
   const [weights, setWeights] = useState(initial?.weights ?? getPresetWeights(selectedPreset));
@@ -126,10 +134,11 @@ export default function App() {
       const [workspaceRes, chatRes] = await Promise.all([
         loadCloudState<{
           countries?: CountryOption[]; fruits?: FruitOption[]; bases?: GelatoBase[]; presets?: StrategyPreset[];
-          countryId?: string; baseId?: string; presetId?: string; pricePoint?: number; weights?: typeof weights;
+          countryId?: string; baseId?: string; presetId?: string;
+          pricePoints?: Record<string, number>; pricePoint?: number;
+          weights?: typeof weights;
           pricingByCountry?: Record<string, PricingProfile>;
           regionalFlavorBonus?: Record<string, Record<string, RegionalFlavorEntry>>;
-          fruitCostByCountry?: Record<string, Record<string, FruitCostEntry>>;
           baseProductionCost?: Record<string, number>;
         }>("workspace"),
         loadCloudState<unknown[]>("chat"),
@@ -146,12 +155,17 @@ export default function App() {
         if (cloudWorkspace.presets) setPresets(cloudWorkspace.presets);
         if (cloudWorkspace.pricingByCountry) setPricingData(cloudWorkspace.pricingByCountry);
         if (cloudWorkspace.regionalFlavorBonus) setFlavorData(cloudWorkspace.regionalFlavorBonus);
-        if (cloudWorkspace.fruitCostByCountry) setFruitCostData(cloudWorkspace.fruitCostByCountry);
         if (cloudWorkspace.baseProductionCost) setProductionCostData(cloudWorkspace.baseProductionCost);
         if (cloudWorkspace.countryId) setCountryId(cloudWorkspace.countryId);
         if (cloudWorkspace.baseId) setBaseId(cloudWorkspace.baseId);
         if (cloudWorkspace.presetId) setPresetId(cloudWorkspace.presetId);
-        if (typeof cloudWorkspace.pricePoint === "number") setPricePoint(cloudWorkspace.pricePoint);
+        // Migrate single pricePoint → per-base pricePoints
+        if (cloudWorkspace.pricePoints) {
+          setPricePoints(cloudWorkspace.pricePoints);
+        } else if (typeof cloudWorkspace.pricePoint === "number") {
+          const bases = cloudWorkspace.bases ?? initialGelatoBases;
+          setPricePoints(Object.fromEntries(bases.map((b) => [b.id, cloudWorkspace.pricePoint as number])));
+        }
         if (cloudWorkspace.weights) setWeights(cloudWorkspace.weights);
       }
       setInitialChat(Array.isArray(chatRes.data) ? chatRes.data : []);
@@ -167,13 +181,13 @@ export default function App() {
   );
   useEffect(() => {
     const payload = {
-      countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights,
+      countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights,
       pricingByCountry: pricingData, regionalFlavorBonus: flavorData,
-      fruitCostByCountry: fruitCostData, baseProductionCost: productionCostData,
+      baseProductionCost: productionCostData,
     };
     saveState(payload);
     if (cloudLoaded) debouncedCloudSave(payload);
-  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoint, weights, pricingData, flavorData, fruitCostData, productionCostData, cloudLoaded, debouncedCloudSave]);
+  }, [countries, fruits, bases, presets, countryId, baseId, presetId, pricePoints, weights, pricingData, flavorData, productionCostData, cloudLoaded, debouncedCloudSave]);
 
   // Debounced chat history sync
   const debouncedChatSave = useMemo(
@@ -188,13 +202,13 @@ export default function App() {
   const handleToolCall = useToolHandlers(
     {
       countries, fruits, bases, presets,
-      pricingData, flavorData, fruitCostData, productionCostData,
-      countryId, baseId, presetId, pricePoint, weights,
+      pricingData, flavorData, productionCostData,
+      countryId, baseId, presetId, pricePoints, weights,
     },
     {
       setCountries, setFruits, setBases, setPresets,
-      setPricingData, setFlavorData, setFruitCostData, setProductionCostData,
-      setCountryId, setBaseId, setPresetId, setPricePoint,
+      setPricingData, setFlavorData, setProductionCostData,
+      setCountryId, setBaseId, setPresetId, setPricePoints,
     },
   );
 
@@ -203,8 +217,7 @@ export default function App() {
   const safePreset = selectedPreset ?? presets[0];
   const pricing = pricingData[countryId];
 
-  // Default weights for the currently-selected strategy, used to drive the
-  // "Reset" button and the "modified" badge in the Tune shelf.
+  // Default weights for the currently-selected strategy
   const defaultWeights = useMemo(
     () => (safePreset ? getPresetWeights(safePreset) : weights),
     [safePreset, weights],
@@ -215,15 +228,14 @@ export default function App() {
   );
 
   // Data completeness — surfaces the correctness gap where a country added
-  // without flavor/cost data produces meaningless rankings.
+  // without flavor data produces meaningless rankings.
   const completeness = selectedCountry
-    ? countryDataCompleteness(selectedCountry.id, fruits, flavorData, fruitCostData)
+    ? countryDataCompleteness(selectedCountry.id, fruits, flavorData)
     : null;
 
   const dataOverrides: DataOverrides = {
     pricingByCountry: pricingData,
     regionalFlavorBonus: flavorData,
-    fruitCostByCountry: fruitCostData,
     baseProductionCost: productionCostData,
   };
 
@@ -253,7 +265,12 @@ export default function App() {
     setCountryId(scenario.countryId);
     setBaseId(scenario.baseId);
     setPresetId(scenario.presetId);
-    setPricePoint(scenario.pricePoint);
+    if (scenario.pricePoints) {
+      setPricePoints(scenario.pricePoints);
+    } else if (typeof scenario.pricePoint === "number") {
+      // Legacy scenario with single pricePoint
+      setPricePoints((prev) => ({ ...prev, [scenario.baseId]: scenario.pricePoint }));
+    }
     setWeights(scenario.weights);
     setActiveTab("analyze");
   }, []);
@@ -282,16 +299,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Cloud load state — skeleton, then error surface if sync failed */}
+        {/* Cloud load state */}
         {!cloudLoaded && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="mb-6 space-y-3"
-          >
+          <div role="status" aria-live="polite" className="mb-6 space-y-3">
             <div className="h-24 animate-pulse rounded-3xl bg-white/60" />
             <div className="h-64 animate-pulse rounded-4xl bg-white/60" />
-            <span className="sr-only">Loading workspace from cloud…</span>
+            <span className="sr-only">Loading workspace from cloud...</span>
           </div>
         )}
         {cloudLoaded && cloudError && (
@@ -322,7 +335,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ═══════════ ANALYZE TAB ═══════════ */}
+        {/* ANALYZE TAB */}
         {cloudLoaded && activeTab === "analyze" && selectedCountry && selectedBase && safePreset ? (
           <div className="space-y-5">
             {/* 1. Pick a market */}
@@ -333,8 +346,7 @@ export default function App() {
               pricingByCountry={pricingData}
             />
 
-            {/* Correctness warning — only if the selected country has enough
-                blank rows that the ranking can't mean much. */}
+            {/* Correctness warning */}
             {completeness && completeness.incomplete && (
               <div
                 role="alert"
@@ -346,13 +358,12 @@ export default function App() {
                 <div className="flex-1">
                   <p className="font-medium">{selectedCountry.label} is missing local data</p>
                   <p className="mt-0.5 text-xs text-amber-800/80">
-                    Only {completeness.flavorFilled}/{completeness.total} fruits have a flavor familiarity set and{" "}
-                    {completeness.costFilled}/{completeness.total} have sourcing cost filled. The ranking below is
+                    Only {completeness.flavorFilled}/{completeness.total} fruits have a flavor familiarity set. The ranking below is
                     approximate until you add local context.
                   </p>
                   <p className="mt-1.5 text-xs text-amber-800/80">
                     <span className="font-medium">Fix it fast:</span> open <b>Ask AI</b> bottom-right and say{" "}
-                    <i>"fill in the flavor and sourcing data for {selectedCountry.label}"</i>, or edit the tables manually in the Data tab.
+                    <i>"fill in the flavor data for {selectedCountry.label}"</i>, or edit the tables manually in the Data tab.
                   </p>
                 </div>
               </div>
@@ -366,7 +377,7 @@ export default function App() {
               ranking={ranking}
             />
 
-            {/* 3. Optional shelves — open only if the user wants detail */}
+            {/* 3. Optional shelves */}
             <Shelf
               label="Tune the model"
               summary={`${selectedBase.label} · ${safePreset.label} · $${pricePoint.toFixed(2)}${weightsModified ? " · modified" : ""}`}
@@ -401,20 +412,22 @@ export default function App() {
                   )}
                 </label>
                 <div className="space-y-1.5">
-                  <span className="text-xs font-medium text-stone">Price point</span>
+                  <span className="text-xs font-medium text-stone">
+                    Price for {selectedBase.label}
+                  </span>
                   <div className="flex items-center gap-2">
                     <input
                       type="range" min="1" max="20" step="0.25"
                       value={pricePoint}
                       onChange={(e) => setPricePoint(Number(e.target.value))}
-                      aria-label={`Price point, currently ${pricePoint.toFixed(2)} dollars`}
+                      aria-label={`Price point for ${selectedBase.label}, currently ${pricePoint.toFixed(2)} dollars`}
                       className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-sand accent-[#2D6A4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]/40"
                     />
                     <span className="w-14 text-right text-sm font-semibold text-ink">${pricePoint.toFixed(2)}</span>
                   </div>
                   {pricing && (
                     <p className="text-[11px] text-stone">
-                      Avg ${pricing.avgMarketPrice.toFixed(2)} · Sensitivity {pricing.priceSensitivity}/5
+                      Market avg: ${pricing.avgMarketPrice.toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -460,7 +473,7 @@ export default function App() {
                               />
                             )}
                           </span>
-                          <span className="font-medium tabular-nums text-stone">{weights[factor].toFixed(1)}×</span>
+                          <span className="font-medium tabular-nums text-stone">{weights[factor].toFixed(1)}x</span>
                         </div>
                         <input
                           type="range" min="0.4" max="2" step="0.1"
@@ -479,7 +492,7 @@ export default function App() {
 
             <Shelf
               label="Save & export"
-              summary="snapshots · JSON · CSV"
+              summary="snapshots / JSON / CSV"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => handleExport("json")}
@@ -493,7 +506,7 @@ export default function App() {
                 <div className="ml-auto" />
                 <ScenarioPanel
                   countryId={countryId} baseId={baseId} presetId={presetId}
-                  pricePoint={pricePoint} weights={weights}
+                  pricePoint={pricePoint} pricePoints={pricePoints} weights={weights}
                   topConcept={ranking[0]?.conceptLabel ?? "—"} topScore={ranking[0]?.score ?? 0}
                   countryLabel={selectedCountry.label} baseLabel={selectedBase.label}
                   presetLabel={safePreset.label} onRestore={handleRestoreScenario}
@@ -503,32 +516,24 @@ export default function App() {
           </div>
         ) : null}
 
-        {/* ═══════════ DATA TAB ═══════════ */}
+        {/* DATA TAB */}
         {activeTab === "data" ? (
           <div className="space-y-6">
             <ModelLibrary
               countries={countries} fruits={fruits} bases={bases} presets={presets} weights={weights}
               pricingByCountry={pricingData} flavorData={flavorData}
-              fruitCostData={fruitCostData} productionCostData={productionCostData}
+              productionCostData={productionCostData}
               data={dataOverrides}
               onAddCountry={() => {
                 const id = `country-${Date.now()}`;
                 const label = `New Country ${countries.length + 1}`;
                 setCountries((c) => [...c, { id, label, profile: emptyCountryProfile() }]);
-                setPricingData((prev) => ({ ...prev, [id]: { avgMarketPrice: 4, priceSensitivity: 3, currency: "USD", costMultiplier: 1 } }));
+                setPricingData((prev) => ({ ...prev, [id]: { avgMarketPrice: 4, currency: "USD" } }));
                 setFlavorData((prev) => {
                   const updated = { ...prev, [id]: {} as Record<string, typeof prev[string][string]> };
-                  for (const fr of fruits) updated[id][fr.id] = { bonus: 0, familiarity: "low" as const, reason: "" };
+                  for (const fr of fruits) updated[id][fr.id] = { familiarity: "low" as const };
                   return updated;
                 });
-                setFruitCostData((prev) => {
-                  const updated = { ...prev };
-                  for (const fr of fruits) updated[fr.id] = { ...updated[fr.id], [id]: { costIndex: 2.5, supplyReliability: 3, sourceNote: "" } };
-                  return updated;
-                });
-                // Jump to Analyze with the new country selected so the user
-                // immediately sees the "missing local data" warning instead of
-                // silently getting garbage rankings.
                 setCountryId(id);
                 setActiveTab("analyze");
               }}
@@ -538,16 +543,16 @@ export default function App() {
                 setFruits((f) => [...f, { id, label, profile: emptyFruitProfile() }]);
                 setFlavorData((prev) => {
                   const updated = { ...prev };
-                  for (const c of countries) updated[c.id] = { ...updated[c.id], [id]: { bonus: 0, familiarity: "low" as const, reason: "" } };
+                  for (const c of countries) updated[c.id] = { ...updated[c.id], [id]: { familiarity: "low" as const } };
                   return updated;
                 });
-                setFruitCostData((prev) => ({ ...prev, [id]: Object.fromEntries(countries.map((c) => [c.id, { costIndex: 2.5, supplyReliability: 3, sourceNote: "" }])) }));
               }}
               onAddBase={() => {
                 const id = `base-${Date.now()}`;
                 const label = `New Base ${bases.length + 1}`;
                 setBases((b) => [...b, { id, label, profile: emptyCountryProfile() }]);
                 setProductionCostData((prev) => ({ ...prev, [id]: 2.5 }));
+                setPricePoints((prev) => ({ ...prev, [id]: 5 }));
               }}
               onAddPreset={() => {
                 const id = `preset-${Date.now()}`;
@@ -563,8 +568,7 @@ export default function App() {
               onPresetFactorChange={(id, factor, value) => setPresets((p) => p.map((x) => x.id === id ? { ...x, weights: { ...x.weights, [factor]: clampInput(value) } } : x))}
               onPresetSummaryChange={(id, summary) => setPresets((p) => p.map((x) => x.id === id ? { ...x, summary } : x))}
               onPricingChange={(cId, field, value) => setPricingData((prev) => ({ ...prev, [cId]: { ...prev[cId], [field]: value } }))}
-              onFlavorBonusChange={(cId, fId, field, value) => setFlavorData((prev) => ({ ...prev, [cId]: { ...prev[cId], [fId]: { ...(prev[cId]?.[fId] ?? { bonus: 0, reason: "", familiarity: "low" as FlavorFamiliarity }), [field]: value } } }))}
-              onFruitCostChange={(fId, cId, field, value) => setFruitCostData((prev) => ({ ...prev, [fId]: { ...prev[fId], [cId]: { ...(prev[fId]?.[cId] ?? { costIndex: 2.5, supplyReliability: 3, sourceNote: "" }), [field]: value } } }))}
+              onFlavorBonusChange={(cId, fId, _field, value) => setFlavorData((prev) => ({ ...prev, [cId]: { ...prev[cId], [fId]: { familiarity: value as FlavorFamiliarity } } }))}
               onProductionCostChange={(bId, value) => setProductionCostData((prev) => ({ ...prev, [bId]: value }))}
             />
             <DataHealthPanel countries={countries} fruits={fruits} bases={bases} />

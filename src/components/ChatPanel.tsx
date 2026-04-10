@@ -14,8 +14,7 @@ const TOOL_LABELS: Record<string, string> = {
   addCountry: "Adding country",
   addFruit: "Adding fruit",
   updateMarketPricing: "Updating pricing",
-  updateFlavorBonus: "Updating flavor familiarity",
-  updateFruitCost: "Updating sourcing cost",
+  updateFlavorFamiliarity: "Updating flavor familiarity",
   setSelection: "Changing selection",
   runAnalysis: "Running analysis",
 };

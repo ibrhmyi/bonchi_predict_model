@@ -15,7 +15,9 @@ export interface Scenario {
   countryId: string;
   baseId: string;
   presetId: string;
+  /** @deprecated Legacy single price — use pricePoints instead */
   pricePoint: number;
+  pricePoints?: Record<string, number>;
   weights: FactorMap;
   /** Top concept label at time of save */
   topConcept: string;

@@ -32,7 +32,7 @@ export const toolSchemas = {
 
   addCountry: {
     description:
-      "Add a new country/market AND populate its flavor familiarity + sourcing cost rows in ONE call. Always include a full profile, realistic pricing, AND flavorBonuses + fruitCosts arrays for EVERY existing fruit (get fruit IDs from getSnapshot first). Do NOT leave flavor/cost data blank — that produces meaningless rankings.",
+      "Add a new country/market AND populate its flavor familiarity in ONE call. Always include a full profile, realistic pricing, AND flavorFamiliarity for EVERY existing fruit (get fruit IDs from getSnapshot first). Do NOT leave flavor data blank — that produces meaningless rankings.",
     inputSchema: z.object({
       label: z.string().describe("Country name, e.g. 'Vietnam'"),
       profile: factorSchema.describe(
@@ -41,44 +41,23 @@ export const toolSchemas = {
       avgMarketPrice: z
         .number()
         .describe("Average premium gelato cup price in USD for this market. REQUIRED."),
-      priceSensitivity: z
-        .number()
-        .min(1)
-        .max(5)
-        .describe("1=insensitive (luxury market), 5=very sensitive. REQUIRED."),
       currency: z.string().optional().describe("3-letter code, e.g. 'VND'. Default USD."),
-      costMultiplier: z
-        .number()
-        .optional()
-        .describe("Local cost multiplier vs base. Default 1."),
-      flavorBonuses: z
+      flavorFamiliarity: z
         .array(
           z.object({
             fruitId: z.string().describe("Existing fruit ID from getSnapshot"),
-            familiarity: z.enum(["high", "medium", "low", "novel"]),
-            bonus: z.number().min(0).max(1).describe("0 = unknown, 0.04 = medium, 0.08 = high"),
-            reason: z.string().optional(),
+            familiarity: z.enum(["high", "medium", "low", "novel"]).describe("How familiar/popular this fruit is locally"),
           }),
         )
         .describe(
           "REQUIRED. One entry per existing fruit reflecting how familiar/popular that fruit is in this market.",
         ),
-      fruitCosts: z
-        .array(
-          z.object({
-            fruitId: z.string().describe("Existing fruit ID from getSnapshot"),
-            costIndex: z.number().min(1).max(5).describe("1=cheap local supply, 5=expensive import"),
-            supplyReliability: z.number().min(1).max(5).describe("1=unreliable, 5=year-round"),
-            sourceNote: z.string().optional(),
-          }),
-        )
-        .describe("REQUIRED. One entry per existing fruit reflecting local sourcing reality."),
     }),
   },
 
   addFruit: {
     description:
-      "Add a new fruit option. Flavor familiarity and sourcing cost rows for all existing countries will be auto-created.",
+      "Add a new fruit option. Flavor familiarity rows for all existing countries will be auto-created.",
     inputSchema: z.object({
       label: z.string().describe("Fruit name, e.g. 'Yuzu'"),
       profile: fruitFactorSchema.optional(),
@@ -90,43 +69,28 @@ export const toolSchemas = {
     inputSchema: z.object({
       countryId: z.string(),
       avgMarketPrice: z.number().optional(),
-      priceSensitivity: z.number().min(1).max(5).optional(),
-      costMultiplier: z.number().optional(),
       currency: z.string().optional(),
     }),
   },
 
-  updateFlavorBonus: {
+  updateFlavorFamiliarity: {
     description:
       "Update a fruit's regional flavor familiarity for a specific country. Used when the user says e.g. 'mango is very popular in Vietnam'.",
     inputSchema: z.object({
       countryId: z.string(),
       fruitId: z.string(),
-      bonus: z.number().min(0).max(1).optional().describe("0-1 score bonus"),
-      familiarity: z.enum(["high", "medium", "low", "novel"]).optional(),
-      reason: z.string().optional().describe("Short justification"),
-    }),
-  },
-
-  updateFruitCost: {
-    description: "Update sourcing cost and supply reliability for a fruit in a country.",
-    inputSchema: z.object({
-      fruitId: z.string(),
-      countryId: z.string(),
-      costIndex: z.number().min(1).max(5).optional(),
-      supplyReliability: z.number().min(1).max(5).optional(),
-      sourceNote: z.string().optional(),
+      familiarity: z.enum(["high", "medium", "low", "novel"]),
     }),
   },
 
   setSelection: {
     description:
-      "Change what's currently selected on the Analyze tab: country, base, strategy preset, or price point. Call this to drive the user's view.",
+      "Change what's currently selected on the Analyze tab: country, base, strategy preset, or price point for a specific base. Call this to drive the user's view.",
     inputSchema: z.object({
       countryId: z.string().optional(),
       baseId: z.string().optional(),
       presetId: z.string().optional(),
-      pricePoint: z.number().optional(),
+      pricePoint: z.number().optional().describe("Sets price for the currently selected base"),
     }),
   },
 

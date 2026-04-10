@@ -6,10 +6,10 @@
 
 import type { CountryOption, FruitOption, GelatoBase, StrategyPreset, FactorMap } from "../data/marketFit";
 import type { PricingProfile } from "../data/pricing";
-import type { RegionalFlavorEntry, FruitCostEntry } from "../data/regionalData";
+import type { RegionalFlavorEntry } from "../data/regionalData";
 
 const STORAGE_KEY = "bonchi-market-fit";
-const VERSION = 2;
+const VERSION = 3;
 
 export interface PersistedState {
   version: number;
@@ -20,12 +20,10 @@ export interface PersistedState {
   countryId: string;
   baseId: string;
   presetId: string;
-  pricePoint: number;
+  pricePoints: Record<string, number>;
   weights: FactorMap;
-  // Editable data (optional for backward compat)
   pricingByCountry?: Record<string, PricingProfile>;
   regionalFlavorBonus?: Record<string, Record<string, RegionalFlavorEntry>>;
-  fruitCostByCountry?: Record<string, Record<string, FruitCostEntry>>;
   baseProductionCost?: Record<string, number>;
 }
 
@@ -43,9 +41,9 @@ export function loadState(): Omit<PersistedState, "version"> | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as PersistedState;
-    // Accept version 1 or 2 — v1 just won't have the new data fields
-    if (parsed.version !== VERSION && parsed.version !== 1) return null;
+    const parsed = JSON.parse(raw) as PersistedState & { pricePoint?: number };
+    // Accept version 1, 2 or 3
+    if (![1, 2, 3].includes(parsed.version)) return null;
 
     if (
       !Array.isArray(parsed.countries) ||
@@ -55,10 +53,44 @@ export function loadState(): Omit<PersistedState, "version"> | null {
       typeof parsed.countryId !== "string" ||
       typeof parsed.baseId !== "string" ||
       typeof parsed.presetId !== "string" ||
-      typeof parsed.pricePoint !== "number" ||
       typeof parsed.weights !== "object"
     ) {
       return null;
+    }
+
+    // Migrate v1/v2 single pricePoint → per-base pricePoints
+    let pricePoints: Record<string, number>;
+    if (parsed.pricePoints && typeof parsed.pricePoints === "object") {
+      pricePoints = parsed.pricePoints;
+    } else {
+      const oldPrice = typeof parsed.pricePoint === "number" ? parsed.pricePoint : 5;
+      pricePoints = Object.fromEntries(parsed.bases.map((b) => [b.id, oldPrice]));
+    }
+
+    // Migrate old flavor entries that have bonus/reason fields → strip to just familiarity
+    let flavorBonus = parsed.regionalFlavorBonus;
+    if (flavorBonus) {
+      const migrated: Record<string, Record<string, RegionalFlavorEntry>> = {};
+      for (const [cId, fruits] of Object.entries(flavorBonus)) {
+        migrated[cId] = {};
+        for (const [fId, entry] of Object.entries(fruits)) {
+          migrated[cId][fId] = { familiarity: (entry as { familiarity?: string }).familiarity as RegionalFlavorEntry["familiarity"] ?? "low" };
+        }
+      }
+      flavorBonus = migrated;
+    }
+
+    // Strip removed fields from pricing (priceSensitivity, costMultiplier)
+    let pricingByCountry = parsed.pricingByCountry;
+    if (pricingByCountry) {
+      const migrated: Record<string, PricingProfile> = {};
+      for (const [cId, profile] of Object.entries(pricingByCountry)) {
+        migrated[cId] = {
+          avgMarketPrice: (profile as { avgMarketPrice?: number }).avgMarketPrice ?? 4,
+          currency: (profile as { currency?: string }).currency ?? "USD",
+        };
+      }
+      pricingByCountry = migrated;
     }
 
     return {
@@ -69,11 +101,10 @@ export function loadState(): Omit<PersistedState, "version"> | null {
       countryId: parsed.countryId,
       baseId: parsed.baseId,
       presetId: parsed.presetId,
-      pricePoint: parsed.pricePoint,
+      pricePoints,
       weights: parsed.weights,
-      pricingByCountry: parsed.pricingByCountry,
-      regionalFlavorBonus: parsed.regionalFlavorBonus,
-      fruitCostByCountry: parsed.fruitCostByCountry,
+      pricingByCountry,
+      regionalFlavorBonus: flavorBonus,
       baseProductionCost: parsed.baseProductionCost,
     };
   } catch {

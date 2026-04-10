@@ -2,12 +2,11 @@
  * Data Health Check
  *
  * Validates that all cross-referenced data entries exist.
- * Catches missing regional flavor data, missing cost data, missing pricing, etc.
  */
 
 import type { CountryOption, FruitOption, GelatoBase } from "../data/marketFit";
 import { pricingByCountry, baseProductionCost } from "../data/pricing";
-import { regionalFlavorBonus, fruitCostByCountry } from "../data/regionalData";
+import { regionalFlavorBonus } from "../data/regionalData";
 import { demographicsByCountry } from "../data/demographics";
 
 export type HealthSeverity = "error" | "warning";
@@ -50,18 +49,7 @@ export function runDataHealthCheck(
         issues.push({
           severity: "warning",
           category: "Regional Flavor",
-          message: `Missing flavor bonus for "${fruit.label}" in "${country.label}". Regional bonus will default to 0.`,
-        });
-      }
-    }
-
-    // Check fruit cost data exists for each fruit
-    for (const fruit of fruits) {
-      if (!fruitCostByCountry[fruit.id]?.[country.id]) {
-        issues.push({
-          severity: "warning",
-          category: "Fruit Cost",
-          message: `Missing cost data for "${fruit.label}" in "${country.label}". Cost efficiency won't appear.`,
+          message: `Missing flavor familiarity for "${fruit.label}" in "${country.label}". Regional bonus will default to low.`,
         });
       }
     }
